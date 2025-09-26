@@ -1,0 +1,109 @@
+"""
+Configuration management for LIMP system.
+"""
+
+import yaml
+from typing import Dict, List, Optional, Any
+from pathlib import Path
+from pydantic import BaseModel, Field
+
+
+class DatabaseConfig(BaseModel):
+    """Database configuration."""
+    url: str = Field(default="sqlite:///./limp.db")
+    echo: bool = Field(default=False)
+
+
+class LLMConfig(BaseModel):
+    """LLM configuration."""
+    provider: str = Field(default="openai")
+    api_key: str
+    model: str = Field(default="gpt-4")
+    base_url: Optional[str] = None
+    max_tokens: int = Field(default=4000)
+    temperature: float = Field(default=0.7)
+
+
+class OAuth2Config(BaseModel):
+    """OAuth2 configuration for external systems."""
+    client_id: str
+    client_secret: str
+    authorization_url: str
+    token_url: str
+    redirect_uri: str
+    scope: Optional[str] = None
+
+
+class ExternalSystemConfig(BaseModel):
+    """External system configuration."""
+    name: str
+    oauth2: OAuth2Config
+    openapi_spec: str  # URL or file path to OpenAPI spec
+    base_url: str
+
+
+class IMPlatformConfig(BaseModel):
+    """Instant messaging platform configuration."""
+    platform: str  # 'slack' or 'teams'
+    app_id: str
+    client_id: str
+    client_secret: str
+    signing_secret: Optional[str] = None
+    verification_token: Optional[str] = None
+
+
+class AdminConfig(BaseModel):
+    """Admin interface configuration."""
+    enabled: bool = Field(default=False)
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+
+class AlertConfig(BaseModel):
+    """Alert configuration."""
+    enabled: bool = Field(default=False)
+    webhook_url: Optional[str] = None
+
+
+class Config(BaseModel):
+    """Main configuration model."""
+    database: DatabaseConfig = Field(default_factory=DatabaseConfig)
+    llm: LLMConfig
+    external_systems: List[ExternalSystemConfig] = Field(default_factory=list)
+    im_platforms: List[IMPlatformConfig] = Field(default_factory=list)
+    admin: AdminConfig = Field(default_factory=AdminConfig)
+    alerts: AlertConfig = Field(default_factory=AlertConfig)
+    max_iterations: int = Field(default=10)
+    prompts_dir: str = Field(default="./prompts")
+    context_files_dir: str = Field(default="./context")
+
+
+def load_config(config_path: str) -> Config:
+    """Load configuration from YAML file."""
+    config_file = Path(config_path)
+    
+    if not config_file.exists():
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    
+    with open(config_file, 'r') as f:
+        config_data = yaml.safe_load(f)
+    
+    return Config(**config_data)
+
+
+# Global config variable
+_config: Optional[Config] = None
+
+
+def get_config() -> Config:
+    """Get the global configuration."""
+    global _config
+    if _config is None:
+        raise RuntimeError("Configuration not initialized. Call load_config first.")
+    return _config
+
+
+def set_config(config: Config) -> None:
+    """Set the global configuration."""
+    global _config
+    _config = config

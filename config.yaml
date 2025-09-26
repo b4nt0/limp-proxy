@@ -1,0 +1,50 @@
+# LIMP Configuration File
+
+database:
+  url: "sqlite:///./limp.db"
+  echo: false
+
+llm:
+  provider: "openai"
+  api_key: "your-openai-api-key-here"
+  model: "gpt-4"
+  max_tokens: 4000
+  temperature: 0.7
+
+external_systems:
+  - name: "example-system"
+    oauth2:
+      client_id: "your-client-id"
+      client_secret: "your-client-secret"
+      authorization_url: "https://example.com/oauth/authorize"
+      token_url: "https://example.com/oauth/token"
+      redirect_uri: "http://localhost:8000/api/oauth2/callback/example-system"
+      scope: "read write"
+    openapi_spec: "https://example.com/api/openapi.json"
+    base_url: "https://example.com/api"
+
+im_platforms:
+  - platform: "slack"
+    app_id: "your-slack-app-id"
+    client_id: "your-slack-client-id"
+    client_secret: "your-slack-client-secret"
+    signing_secret: "your-slack-signing-secret"
+  
+  - platform: "teams"
+    app_id: "your-teams-app-id"
+    client_id: "your-teams-client-id"
+    client_secret: "your-teams-client-secret"
+
+admin:
+  enabled: true
+  username: "admin"
+  password: "admin123"
+
+alerts:
+  enabled: false
+  webhook_url: "https://your-webhook-url.com/alerts"
+
+max_iterations: 10
+prompts_dir: "./prompts"
+context_files_dir: "./context"
+
