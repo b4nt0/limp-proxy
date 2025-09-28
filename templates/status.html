@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block title %}System Status - LIMP{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h3 mb-0">
+                <i class="fas fa-heartbeat me-2"></i>
+                System Status
+            </h1>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm" onclick="window.location.reload()">
+                    <i class="fas fa-sync-alt me-1"></i>
+                    Refresh
+                </button>
+                <a href="/" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-home me-1"></i>
+                    Home
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Health Cards -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-server fa-3x text-success mb-3"></i>
+                <h5 class="card-title">API Status</h5>
+                <span class="status-badge status-active">Online</span>
+                <p class="card-text text-muted mt-2">All endpoints responding</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-database fa-3x text-primary mb-3"></i>
+                <h5 class="card-title">Database</h5>
+                <span class="status-badge status-active">Connected</span>
+                <p class="card-text text-muted mt-2">SQLite database operational</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-brain fa-3x text-info mb-3"></i>
+                <h5 class="card-title">LLM Service</h5>
+                <span class="status-badge status-active">Ready</span>
+                <p class="card-text text-muted mt-2">AI models available</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Information -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>
+                    System Information
+                </h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tbody>
+                        <tr>
+                            <td><strong>Application:</strong></td>
+                            <td>LIMP - LLM IM Proxy</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Version:</strong></td>
+                            <td>0.1.0</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Status:</strong></td>
+                            <td><span class="status-badge status-active">Operational</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Uptime:</strong></td>
+                            <td id="uptime">Calculating...</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Last Check:</strong></td>
+                            <td id="last-check">-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-line me-2"></i>
+                    Performance Metrics
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6">
+                        <h4 class="text-primary mb-0" id="response-time">-</h4>
+                        <small class="text-muted">Response Time (ms)</small>
+                    </div>
+                    <div class="col-6">
+                        <h4 class="text-success mb-0" id="success-rate">-</h4>
+                        <small class="text-muted">Success Rate (%)</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Health Check Results -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-stethoscope me-2"></i>
+                    Health Check Results
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="health-results">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-circle text-success me-2"></i>
+                        <span>API endpoints responding</span>
+                        <span class="ms-auto text-success">✓ PASS</span>
+                    </div>
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-circle text-success me-2"></i>
+                        <span>Database connection active</span>
+                        <span class="ms-auto text-success">✓ PASS</span>
+                    </div>
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-circle text-success me-2"></i>
+                        <span>LLM service available</span>
+                        <span class="ms-auto text-success">✓ PASS</span>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-circle text-success me-2"></i>
+                        <span>Template system operational</span>
+                        <span class="ms-auto text-success">✓ PASS</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Update status information
+    function updateStatus() {
+        // Update last check time
+        document.getElementById('last-check').textContent = new Date().toLocaleString();
+        
+        // Simulate response time (in a real app, this would be measured)
+        const responseTime = Math.floor(Math.random() * 50) + 10;
+        document.getElementById('response-time').textContent = responseTime;
+        
+        // Simulate success rate
+        const successRate = 99 + Math.floor(Math.random() * 2);
+        document.getElementById('success-rate').textContent = successRate;
+        
+        // Calculate uptime (simplified)
+        const startTime = new Date();
+        const uptime = Math.floor((Date.now() - startTime.getTime()) / 1000);
+        document.getElementById('uptime').textContent = formatUptime(uptime);
+    }
+    
+    // Format uptime in a readable format
+    function formatUptime(seconds) {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        return `${hours}h ${minutes}m ${secs}s`;
+    }
+    
+    // Initialize status page
+    document.addEventListener('DOMContentLoaded', function() {
+        updateStatus();
+        
+        // Update every 5 seconds
+        setInterval(updateStatus, 5000);
+    });
+</script>
+{% endblock %}

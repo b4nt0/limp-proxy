@@ -2,8 +2,11 @@
 Main FastAPI application for LIMP system.
 """
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 import logging
 
@@ -31,6 +34,10 @@ def create_app(app_config: Config) -> FastAPI:
         version="0.1.0"
     )
     
+    # Configure Jinja2 templates
+    templates = Jinja2Templates(directory="templates")
+    app.state.templates = templates
+    
     # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
@@ -49,7 +56,10 @@ def create_app(app_config: Config) -> FastAPI:
     app.include_router(oauth2_router, prefix="/api/oauth2", tags=["oauth2"])
     
     if config.admin.enabled:
-        app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
+        # Set templates for admin router
+        from .admin import set_templates
+        set_templates(templates)
+        app.include_router(admin_router, prefix="/admin", tags=["admin"])
     
     @app.get("/")
     async def root():
@@ -58,6 +68,14 @@ def create_app(app_config: Config) -> FastAPI:
     @app.get("/health")
     async def health_check():
         return {"status": "healthy"}
+    
+    @app.get("/status", response_class=HTMLResponse)
+    async def status_page(request: Request):
+        """System status page."""
+        return templates.TemplateResponse("status.html", {
+            "request": request,
+            "title": "System Status"
+        })
     
     return app
 

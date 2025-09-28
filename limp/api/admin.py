@@ -3,7 +3,9 @@ Admin interface API endpoints.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 import logging
@@ -16,22 +18,45 @@ logger = logging.getLogger(__name__)
 admin_router = APIRouter()
 security = HTTPBasic()
 
+# Templates will be set by the main app
+templates = None
 
-@admin_router.get("/")
-async def admin_dashboard():
+def set_templates(templates_instance):
+    """Set templates instance for admin router."""
+    global templates
+    templates = templates_instance
+
+
+@admin_router.get("/", response_class=HTMLResponse)
+async def admin_dashboard(request: Request):
     """Admin dashboard."""
-    return {
-        "message": "Admin interface",
-        "status": "active"
-    }
+    if templates is None:
+        raise HTTPException(status_code=500, detail="Templates not configured")
+    
+    return templates.TemplateResponse("admin/dashboard.html", {
+        "request": request,
+        "title": "Admin Dashboard"
+    })
 
 
-@admin_router.get("/config")
+@admin_router.get("/config", response_class=HTMLResponse)
+async def get_configuration_html(request: Request):
+    """Get configuration page."""
+    if templates is None:
+        raise HTTPException(status_code=500, detail="Templates not configured")
+    
+    return templates.TemplateResponse("admin/config.html", {
+        "request": request,
+        "title": "Configuration"
+    })
+
+
+@admin_router.get("/config/api")
 async def get_configuration(
     credentials: HTTPBasicCredentials = Depends(security),
     db: Session = Depends(get_session)
 ):
-    """Get current configuration."""
+    """Get current configuration (API endpoint)."""
     # Verify admin credentials
     if not verify_admin_credentials(credentials):
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -72,12 +97,24 @@ async def update_configuration(
     }
 
 
-@admin_router.get("/users")
+@admin_router.get("/users", response_class=HTMLResponse)
+async def list_users_html(request: Request):
+    """List users page."""
+    if templates is None:
+        raise HTTPException(status_code=500, detail="Templates not configured")
+    
+    return templates.TemplateResponse("admin/users.html", {
+        "request": request,
+        "title": "User Management"
+    })
+
+
+@admin_router.get("/users/api")
 async def list_users(
     credentials: HTTPBasicCredentials = Depends(security),
     db: Session = Depends(get_session)
 ):
-    """List all users."""
+    """List all users (API endpoint)."""
     # Verify admin credentials
     if not verify_admin_credentials(credentials):
         raise HTTPException(status_code=401, detail="Invalid credentials")

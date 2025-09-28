@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+
+{% block title %}Configuration - LIMP Admin{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h3 mb-0">
+                <i class="fas fa-cog me-2"></i>
+                System Configuration
+            </h1>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm" onclick="window.location.reload()">
+                    <i class="fas fa-sync-alt me-1"></i>
+                    Refresh
+                </button>
+                <a href="/admin/" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-arrow-left me-1"></i>
+                    Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Configuration Sections -->
+<div class="row">
+    <!-- Database Configuration -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-database me-2"></i>
+                    Database Configuration
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="database-config">
+                    <div class="loading"></div>
+                    Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- LLM Configuration -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-brain me-2"></i>
+                    LLM Configuration
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="llm-config">
+                    <div class="loading"></div>
+                    Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- IM Platforms -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-comments me-2"></i>
+                    IM Platforms
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="im-platforms">
+                    <div class="loading"></div>
+                    Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- External Systems -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-plug me-2"></i>
+                    External Systems
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="external-systems">
+                    <div class="loading"></div>
+                    Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Admin Settings -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-shield-alt me-2"></i>
+                    Admin Settings
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="admin-config">
+                    <div class="loading"></div>
+                    Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Alerts Configuration -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-bell me-2"></i>
+                    Alerts Configuration
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="alerts-config">
+                    <div class="loading"></div>
+                    Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Information -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>
+                    System Information
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <strong>Max Iterations:</strong>
+                        <span id="max-iterations">-</span>
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Configuration Status:</strong>
+                        <span class="status-badge status-active">Valid</span>
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Last Updated:</strong>
+                        <span id="config-last-updated">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Load configuration data
+    async function loadConfiguration() {
+        try {
+            const response = await fetch('/admin/config/api');
+            if (response.ok) {
+                const config = await response.json();
+                displayConfiguration(config);
+            } else {
+                throw new Error('Failed to load configuration');
+            }
+        } catch (error) {
+            console.error('Error loading configuration:', error);
+            showError('Error loading configuration: ' + error.message);
+        }
+    }
+    
+    // Display configuration
+    function displayConfiguration(config) {
+        // Database configuration
+        document.getElementById('database-config').innerHTML = `
+            <table class="table table-sm">
+                <tr><td><strong>URL:</strong></td><td><code>${config.database.url || 'N/A'}</code></td></tr>
+                <tr><td><strong>Echo:</strong></td><td>${config.database.echo ? 'Yes' : 'No'}</td></tr>
+            </table>
+        `;
+        
+        // LLM configuration
+        document.getElementById('llm-config').innerHTML = `
+            <table class="table table-sm">
+                <tr><td><strong>Provider:</strong></td><td><span class="badge bg-primary">${config.llm.provider}</span></td></tr>
+                <tr><td><strong>Model:</strong></td><td><code>${config.llm.model}</code></td></tr>
+                <tr><td><strong>Max Tokens:</strong></td><td>${config.llm.max_tokens}</td></tr>
+                <tr><td><strong>Temperature:</strong></td><td>${config.llm.temperature}</td></tr>
+            </table>
+        `;
+        
+        // IM Platforms
+        const imPlatforms = config.im_platforms || [];
+        document.getElementById('im-platforms').innerHTML = imPlatforms.length > 0 ? `
+            <div class="list-group">
+                ${imPlatforms.map(platform => `
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>${platform.name}</strong>
+                                <br>
+                                <small class="text-muted">${platform.type}</small>
+                            </div>
+                            <span class="status-badge ${platform.enabled ? 'status-active' : 'status-inactive'}">
+                                ${platform.enabled ? 'Enabled' : 'Disabled'}
+                            </span>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        ` : '<p class="text-muted">No IM platforms configured.</p>';
+        
+        // External Systems
+        const externalSystems = config.external_systems || [];
+        document.getElementById('external-systems').innerHTML = externalSystems.length > 0 ? `
+            <div class="list-group">
+                ${externalSystems.map(system => `
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>${system.name}</strong>
+                                <br>
+                                <small class="text-muted">${system.type}</small>
+                            </div>
+                            <span class="status-badge ${system.enabled ? 'status-active' : 'status-inactive'}">
+                                ${system.enabled ? 'Enabled' : 'Disabled'}
+                            </span>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        ` : '<p class="text-muted">No external systems configured.</p>';
+        
+        // Admin settings
+        document.getElementById('admin-config').innerHTML = `
+            <table class="table table-sm">
+                <tr><td><strong>Enabled:</strong></td><td>${config.admin.enabled ? 'Yes' : 'No'}</td></tr>
+                <tr><td><strong>Username:</strong></td><td><code>${config.admin.username || 'N/A'}</code></td></tr>
+                <tr><td><strong>Password Set:</strong></td><td>${config.admin.password ? 'Yes' : 'No'}</td></tr>
+            </table>
+        `;
+        
+        // Alerts configuration
+        document.getElementById('alerts-config').innerHTML = `
+            <table class="table table-sm">
+                <tr><td><strong>Enabled:</strong></td><td>${config.alerts.enabled ? 'Yes' : 'No'}</td></tr>
+                <tr><td><strong>Webhook URL:</strong></td><td><code>${config.alerts.webhook_url || 'N/A'}</code></td></tr>
+                <tr><td><strong>Level:</strong></td><td><span class="badge bg-warning">${config.alerts.level}</span></td></tr>
+            </table>
+        `;
+        
+        // System information
+        document.getElementById('max-iterations').textContent = config.max_iterations || 'N/A';
+        document.getElementById('config-last-updated').textContent = new Date().toLocaleString();
+    }
+    
+    // Show error message
+    function showError(message) {
+        const sections = ['database-config', 'llm-config', 'im-platforms', 'external-systems', 'admin-config', 'alerts-config'];
+        sections.forEach(sectionId => {
+            document.getElementById(sectionId).innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    ${message}
+                </div>
+            `;
+        });
+    }
+    
+    // Initialize page
+    document.addEventListener('DOMContentLoaded', function() {
+        loadConfiguration();
+    });
+</script>
+{% endblock %}

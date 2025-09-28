@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard - LIMP{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h3 mb-0">
+                <i class="fas fa-tachometer-alt me-2"></i>
+                Admin Dashboard
+            </h1>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm" onclick="window.location.reload()">
+                    <i class="fas fa-sync-alt me-1"></i>
+                    Refresh
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="window.location.href='/admin/config'">
+                    <i class="fas fa-cog me-1"></i>
+                    Settings
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Status Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <div class="d-flex align-items-center justify-content-center mb-2">
+                    <i class="fas fa-server fa-2x text-success me-3"></i>
+                    <div>
+                        <h5 class="card-title mb-0">System Status</h5>
+                        <span class="status-badge status-active">Online</span>
+                    </div>
+                </div>
+                <p class="card-text text-muted">All systems operational</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <div class="d-flex align-items-center justify-content-center mb-2">
+                    <i class="fas fa-users fa-2x text-primary me-3"></i>
+                    <div>
+                        <h5 class="card-title mb-0">Active Users</h5>
+                        <span class="h4 text-primary mb-0" id="user-count">-</span>
+                    </div>
+                </div>
+                <p class="card-text text-muted">Registered users</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <div class="d-flex align-items-center justify-content-center mb-2">
+                    <i class="fas fa-comments fa-2x text-info me-3"></i>
+                    <div>
+                        <h5 class="card-title mb-0">Conversations</h5>
+                        <span class="h4 text-info mb-0" id="conversation-count">-</span>
+                    </div>
+                </div>
+                <p class="card-text text-muted">Active conversations</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <div class="d-flex align-items-center justify-content-center mb-2">
+                    <i class="fas fa-plug fa-2x text-warning me-3"></i>
+                    <div>
+                        <h5 class="card-title mb-0">IM Platforms</h5>
+                        <span class="h4 text-warning mb-0" id="platform-count">-</span>
+                    </div>
+                </div>
+                <p class="card-text text-muted">Connected platforms</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-bolt me-2"></i>
+                    Quick Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <a href="/admin/users" class="btn btn-outline-primary w-100">
+                            <i class="fas fa-users me-2"></i>
+                            Manage Users
+                        </a>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <a href="/admin/config" class="btn btn-outline-secondary w-100">
+                            <i class="fas fa-cog me-2"></i>
+                            Configuration
+                        </a>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <button class="btn btn-outline-info w-100" onclick="testSystemHealth()">
+                            <i class="fas fa-heartbeat me-2"></i>
+                            Health Check
+                        </button>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <button class="btn btn-outline-warning w-100" onclick="viewLogs()">
+                            <i class="fas fa-file-alt me-2"></i>
+                            View Logs
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Information -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>
+                    System Information
+                </h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tbody>
+                        <tr>
+                            <td><strong>Version:</strong></td>
+                            <td>0.1.0</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Status:</strong></td>
+                            <td><span class="status-badge status-active">Active</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Uptime:</strong></td>
+                            <td id="uptime">-</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Last Updated:</strong></td>
+                            <td id="last-updated">-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-line me-2"></i>
+                    Recent Activity
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="recent-activity">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-circle text-success me-2"></i>
+                        <span>System started successfully</span>
+                        <small class="text-muted ms-auto">Just now</small>
+                    </div>
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-user-plus text-primary me-2"></i>
+                        <span>Admin interface loaded</span>
+                        <small class="text-muted ms-auto">Just now</small>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-database text-info me-2"></i>
+                        <span>Database connection established</span>
+                        <small class="text-muted ms-auto">Just now</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Load dashboard data
+    async function loadDashboardData() {
+        try {
+            // Load user count
+            const usersResponse = await fetch('/admin/users/api');
+            if (usersResponse.ok) {
+                const usersData = await usersResponse.json();
+                document.getElementById('user-count').textContent = usersData.users ? usersData.users.length : 0;
+            }
+            
+            // Load configuration for platform count
+            const configResponse = await fetch('/admin/config/api');
+            if (configResponse.ok) {
+                const configData = await configResponse.json();
+                document.getElementById('platform-count').textContent = configData.im_platforms ? configData.im_platforms.length : 0;
+            }
+            
+            // Update timestamps
+            document.getElementById('last-updated').textContent = new Date().toLocaleString();
+            document.getElementById('uptime').textContent = 'Calculating...';
+            
+        } catch (error) {
+            console.error('Error loading dashboard data:', error);
+        }
+    }
+    
+    // Test system health
+    async function testSystemHealth() {
+        const button = event.target;
+        const originalText = showLoading(button);
+        
+        try {
+            const response = await fetch('/health');
+            if (response.ok) {
+                alert('System is healthy!');
+            } else {
+                alert('System health check failed!');
+            }
+        } catch (error) {
+            alert('Error checking system health!');
+        } finally {
+            hideLoading(button, originalText);
+        }
+    }
+    
+    // View logs (placeholder)
+    function viewLogs() {
+        alert('Log viewer functionality would be implemented here.');
+    }
+    
+    // Initialize dashboard
+    document.addEventListener('DOMContentLoaded', function() {
+        loadDashboardData();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(loadDashboardData, 30000);
+    });
+</script>
+{% endblock %}
