@@ -191,14 +191,14 @@ def test_oauth2_status_not_authorized(test_client: TestClient):
 
 def test_admin_dashboard(test_client: TestClient):
     """Test admin dashboard endpoint."""
-    response = test_client.get("/api/admin/")
+    response = test_client.get("/admin/")
     assert response.status_code == 200
-    assert "Admin interface" in response.json()["message"]
+    assert "<html" in response.content.decode("utf-8")
 
 
 def test_admin_config_unauthorized(test_client: TestClient):
     """Test admin config endpoint without authentication."""
-    response = test_client.get("/api/admin/config")
+    response = test_client.get("/admin/config/api")
     assert response.status_code == 401
 
 
@@ -208,7 +208,7 @@ def test_admin_config_authorized(test_client: TestClient):
         mock_verify.return_value = True
         
         response = test_client.get(
-            "/api/admin/config",
+            "/admin/config/api",
             auth=("admin", "admin123")
         )
         assert response.status_code == 200
@@ -218,7 +218,7 @@ def test_admin_config_authorized(test_client: TestClient):
 
 def test_admin_users_unauthorized(test_client: TestClient):
     """Test admin users endpoint without authentication."""
-    response = test_client.get("/api/admin/users")
+    response = test_client.get("/admin/users/api")
     assert response.status_code == 401
 
 
@@ -228,7 +228,7 @@ def test_admin_users_authorized(test_client: TestClient):
         mock_verify.return_value = True
         
         response = test_client.get(
-            "/api/admin/users",
+            "/admin/users/api",
             auth=("admin", "admin123")
         )
         assert response.status_code == 200
@@ -237,7 +237,7 @@ def test_admin_users_authorized(test_client: TestClient):
 
 def test_admin_revoke_token_unauthorized(test_client: TestClient):
     """Test admin revoke token endpoint without authentication."""
-    response = test_client.delete("/api/admin/users/1/tokens/1")
+    response = test_client.delete("/admin/users/1/tokens/1")
     assert response.status_code == 401
 
 
@@ -262,7 +262,7 @@ def test_admin_revoke_token_authorized(test_client: TestClient):
             mock_sessionmaker.return_value.__enter__.return_value = mock_db
             
             response = test_client.delete(
-                "/api/admin/users/1/tokens/1",
+                "/admin/users/1/tokens/1",
                 auth=("admin", "admin123")
             )
             
