@@ -26,6 +26,7 @@ def test_engine(test_db_url):
     
     # Create all tables
     Base.metadata.create_all(bind=engine)
+    init_database(engine)
     
     yield engine
     

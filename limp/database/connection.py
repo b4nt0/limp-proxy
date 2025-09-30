@@ -58,11 +58,19 @@ def get_session() -> Generator[Session, None, None]:
 
 
 def init_database(engine):
-    """Initialize database tables."""
+    """Initialize database tables using Alembic migrations."""
     try:
-        # Create all tables
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created successfully")
+        # Use Alembic migrations instead of create_all
+        from alembic.config import Config as AlembicConfig
+        from alembic import command
+
+        if engine.url.database == ':memory:':
+            Base.metadata.create_all(bind=engine)
+            logger.info("Created in-memory database tables successfully")
+        else:        
+            alembic_cfg = AlembicConfig("alembic.ini")
+            command.upgrade(alembic_cfg, "head")
+            logger.info("Database migrations applied successfully")
     except Exception as e:
-        logger.error(f"Failed to create database tables: {e}")
+        logger.error(f"Failed to apply database migrations: {e}")
         raise
