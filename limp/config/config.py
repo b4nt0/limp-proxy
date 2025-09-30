@@ -2,10 +2,17 @@
 Configuration management for LIMP system.
 """
 
+import os
 import yaml
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 from pydantic import BaseModel, Field
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    # Fallback for when python-dotenv is not installed
+    def load_dotenv(path: Optional[str] = None) -> None:
+        pass
 
 
 class DatabaseConfig(BaseModel):
@@ -147,3 +154,81 @@ def set_config(config: Config) -> None:
     """Set the global configuration."""
     global _config
     _config = config
+
+
+class EnvironmentConfig:
+    """Environment configuration manager with fallback support."""
+    
+    def __init__(self, env_file_path: Optional[str] = None):
+        """
+        Initialize environment configuration.
+        
+        Args:
+            env_file_path: Path to .env file. If None, will look for .env in current directory.
+        """
+        self.env_file_path = env_file_path or ".env"
+        self._load_env_file()
+    
+    def _load_env_file(self) -> None:
+        """Load environment variables from .env file if it exists."""
+        env_path = Path(self.env_file_path)
+        if env_path.exists():
+            load_dotenv(env_path)
+    
+    def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        """
+        Get environment variable with fallback support.
+        
+        Priority order:
+        1. Environment variable (takes priority)
+        2. .env file variable
+        3. Default value
+        
+        Args:
+            key: Environment variable name
+            default: Default value if not found in environment or .env
+            
+        Returns:
+            Environment variable value or default
+        """
+        # First check environment variables (highest priority)
+        value = os.getenv(key)
+        if value is not None:
+            return value
+        
+        # If not found in environment, .env file is already loaded by load_dotenv
+        # So we can check again (this will include .env values)
+        value = os.getenv(key)
+        if value is not None:
+            return value
+        
+        # Return default if not found anywhere
+        return default
+    
+    def get_config_path(self) -> str:
+        """
+        Get configuration file path with environment support.
+        
+        Returns:
+            Path to configuration file
+        """
+        return self.get("LIMP_CONFIG", default="config.yaml")
+
+
+# Global environment config instance
+_env_config: Optional[EnvironmentConfig] = None
+
+
+def get_env_config() -> EnvironmentConfig:
+    """Get the global environment configuration."""
+    global _env_config
+    if _env_config is None:
+        _env_config = EnvironmentConfig()
+    return _env_config
+
+
+def initialize_env_config(env_file_path: Optional[str] = None) -> EnvironmentConfig:
+    """Initialize environment configuration with optional .env file path."""
+    global _env_config
+    _env_config = EnvironmentConfig(env_file_path)
+    return _env_config
