@@ -31,6 +31,7 @@ def main():
             logger.info("You can also set LIMP_CONFIG environment variable to specify a different config file")
             return
         
+        logger.info(f"Loading configuration from {config_path}")
         config = load_config(str(config_path))
         
         # Create FastAPI app
