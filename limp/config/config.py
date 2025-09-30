@@ -40,6 +40,7 @@ class ExternalSystemConfig(BaseModel):
     oauth2: OAuth2Config
     openapi_spec: str  # URL or file path to OpenAPI spec
     base_url: str
+    primary: bool = Field(default=False)
 
 
 class IMPlatformConfig(BaseModel):
@@ -76,6 +77,27 @@ class Config(BaseModel):
     max_iterations: int = Field(default=10)
     prompts_dir: str = Field(default="./prompts")
     context_files_dir: str = Field(default="./context")
+    
+    def get_primary_system(self) -> Optional[ExternalSystemConfig]:
+        """Get the primary external system, if any."""
+        primary_systems = [system for system in self.external_systems if system.primary]
+        return primary_systems[0] if primary_systems else None
+    
+    def assign_primary_system(self, system_name: str) -> None:
+        """Assign a system as primary by name. Clears any existing primary system."""
+        # First, clear all existing primary flags
+        for system in self.external_systems:
+            system.primary = False
+        
+        # Find and set the specified system as primary
+        for system in self.external_systems:
+            if system.name == system_name:
+                system.primary = True
+                return
+        
+        # If we get here, the system wasn't found
+        available_names = [system.name for system in self.external_systems]
+        raise ValueError(f"External system '{system_name}' not found. Available systems: {available_names}")
 
 
 def load_config(config_path: str) -> Config:
@@ -88,7 +110,15 @@ def load_config(config_path: str) -> Config:
     with open(config_file, 'r') as f:
         config_data = yaml.safe_load(f)
     
-    return Config(**config_data)
+    config = Config(**config_data)
+    
+    # Sanity check: ensure at most one primary external system
+    primary_systems = [system for system in config.external_systems if system.primary]
+    if len(primary_systems) > 1:
+        primary_names = [system.name for system in primary_systems]
+        raise ValueError(f"Multiple primary external systems found: {primary_names}. Only one primary system is allowed.")
+    
+    return config
 
 
 # Global config variable

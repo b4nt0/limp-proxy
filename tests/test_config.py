@@ -160,3 +160,260 @@ def test_config_validation():
             max_tokens="invalid"  # Should be int
         )
 
+
+def test_external_system_primary_flag():
+    """Test external system primary flag."""
+    oauth2_config = OAuth2Config(
+        client_id="test-client-id",
+        client_secret="test-client-secret",
+        authorization_url="https://example.com/oauth/authorize",
+        token_url="https://example.com/oauth/token",
+        redirect_uri="http://localhost:8000/callback"
+    )
+    
+    # Test default primary flag (should be False)
+    system_config = ExternalSystemConfig(
+        name="test-system",
+        oauth2=oauth2_config,
+        openapi_spec="https://example.com/api/openapi.json",
+        base_url="https://example.com/api"
+    )
+    assert system_config.primary is False
+    
+    # Test explicit primary flag
+    primary_system_config = ExternalSystemConfig(
+        name="primary-system",
+        oauth2=oauth2_config,
+        openapi_spec="https://example.com/api/openapi.json",
+        base_url="https://example.com/api",
+        primary=True
+    )
+    assert primary_system_config.primary is True
+
+
+def test_get_primary_system():
+    """Test get_primary_system method."""
+    llm_config = LLMConfig(api_key="test-key")
+    
+    oauth2_config = OAuth2Config(
+        client_id="test-client-id",
+        client_secret="test-client-secret",
+        authorization_url="https://example.com/oauth/authorize",
+        token_url="https://example.com/oauth/token",
+        redirect_uri="http://localhost:8000/callback"
+    )
+    
+    # Test with no primary system
+    config = Config(
+        llm=llm_config,
+        external_systems=[
+            ExternalSystemConfig(
+                name="system1",
+                oauth2=oauth2_config,
+                openapi_spec="https://example.com/api/openapi.json",
+                base_url="https://example.com/api",
+                primary=False
+            ),
+            ExternalSystemConfig(
+                name="system2",
+                oauth2=oauth2_config,
+                openapi_spec="https://example.com/api/openapi.json",
+                base_url="https://example.com/api",
+                primary=False
+            )
+        ]
+    )
+    
+    primary_system = config.get_primary_system()
+    assert primary_system is None
+    
+    # Test with one primary system
+    config.external_systems[0].primary = True
+    primary_system = config.get_primary_system()
+    assert primary_system is not None
+    assert primary_system.name == "system1"
+    assert primary_system.primary is True
+
+
+def test_assign_primary_system():
+    """Test assign_primary_system method."""
+    llm_config = LLMConfig(api_key="test-key")
+    
+    oauth2_config = OAuth2Config(
+        client_id="test-client-id",
+        client_secret="test-client-secret",
+        authorization_url="https://example.com/oauth/authorize",
+        token_url="https://example.com/oauth/token",
+        redirect_uri="http://localhost:8000/callback"
+    )
+    
+    config = Config(
+        llm=llm_config,
+        external_systems=[
+            ExternalSystemConfig(
+                name="system1",
+                oauth2=oauth2_config,
+                openapi_spec="https://example.com/api/openapi.json",
+                base_url="https://example.com/api",
+                primary=False
+            ),
+            ExternalSystemConfig(
+                name="system2",
+                oauth2=oauth2_config,
+                openapi_spec="https://example.com/api/openapi.json",
+                base_url="https://example.com/api",
+                primary=False
+            )
+        ]
+    )
+    
+    # Test assigning primary system
+    config.assign_primary_system("system1")
+    assert config.external_systems[0].primary is True
+    assert config.external_systems[1].primary is False
+    assert config.get_primary_system().name == "system1"
+    
+    # Test switching primary system
+    config.assign_primary_system("system2")
+    assert config.external_systems[0].primary is False
+    assert config.external_systems[1].primary is True
+    assert config.get_primary_system().name == "system2"
+    
+    # Test assigning non-existent system
+    with pytest.raises(ValueError, match="External system 'nonexistent' not found"):
+        config.assign_primary_system("nonexistent")
+
+
+def test_load_config_primary_system_sanity_check():
+    """Test sanity check for multiple primary systems during config load."""
+    config_data = {
+        "llm": {
+            "api_key": "test-key"
+        },
+        "external_systems": [
+            {
+                "name": "system1",
+                "oauth2": {
+                    "client_id": "test-client-id",
+                    "client_secret": "test-client-secret",
+                    "authorization_url": "https://example.com/oauth/authorize",
+                    "token_url": "https://example.com/oauth/token",
+                    "redirect_uri": "http://localhost:8000/callback"
+                },
+                "openapi_spec": "https://example.com/api/openapi.json",
+                "base_url": "https://example.com/api",
+                "primary": True
+            },
+            {
+                "name": "system2",
+                "oauth2": {
+                    "client_id": "test-client-id",
+                    "client_secret": "test-client-secret",
+                    "authorization_url": "https://example.com/oauth/authorize",
+                    "token_url": "https://example.com/oauth/token",
+                    "redirect_uri": "http://localhost:8000/callback"
+                },
+                "openapi_spec": "https://example.com/api/openapi.json",
+                "base_url": "https://example.com/api",
+                "primary": True
+            }
+        ]
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config_data, f)
+        config_path = f.name
+    
+    try:
+        with pytest.raises(ValueError, match="Multiple primary external systems found"):
+            load_config(config_path)
+    finally:
+        Path(config_path).unlink()
+
+
+def test_load_config_single_primary_system():
+    """Test loading config with single primary system (should succeed)."""
+    config_data = {
+        "llm": {
+            "api_key": "test-key"
+        },
+        "external_systems": [
+            {
+                "name": "system1",
+                "oauth2": {
+                    "client_id": "test-client-id",
+                    "client_secret": "test-client-secret",
+                    "authorization_url": "https://example.com/oauth/authorize",
+                    "token_url": "https://example.com/oauth/token",
+                    "redirect_uri": "http://localhost:8000/callback"
+                },
+                "openapi_spec": "https://example.com/api/openapi.json",
+                "base_url": "https://example.com/api",
+                "primary": True
+            },
+            {
+                "name": "system2",
+                "oauth2": {
+                    "client_id": "test-client-id",
+                    "client_secret": "test-client-secret",
+                    "authorization_url": "https://example.com/oauth/authorize",
+                    "token_url": "https://example.com/oauth/token",
+                    "redirect_uri": "http://localhost:8000/callback"
+                },
+                "openapi_spec": "https://example.com/api/openapi.json",
+                "base_url": "https://example.com/api",
+                "primary": False
+            }
+        ]
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config_data, f)
+        config_path = f.name
+    
+    try:
+        config = load_config(config_path)
+        assert config is not None
+        primary_system = config.get_primary_system()
+        assert primary_system is not None
+        assert primary_system.name == "system1"
+        assert primary_system.primary is True
+    finally:
+        Path(config_path).unlink()
+
+
+def test_load_config_no_primary_system():
+    """Test loading config with no primary systems (should succeed)."""
+    config_data = {
+        "llm": {
+            "api_key": "test-key"
+        },
+        "external_systems": [
+            {
+                "name": "system1",
+                "oauth2": {
+                    "client_id": "test-client-id",
+                    "client_secret": "test-client-secret",
+                    "authorization_url": "https://example.com/oauth/authorize",
+                    "token_url": "https://example.com/oauth/token",
+                    "redirect_uri": "http://localhost:8000/callback"
+                },
+                "openapi_spec": "https://example.com/api/openapi.json",
+                "base_url": "https://example.com/api",
+                "primary": False
+            }
+        ]
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config_data, f)
+        config_path = f.name
+    
+    try:
+        config = load_config(config_path)
+        assert config is not None
+        primary_system = config.get_primary_system()
+        assert primary_system is None
+    finally:
+        Path(config_path).unlink()
+
