@@ -32,7 +32,7 @@ async def handle_slack(request: Request, db: Session = Depends(get_session)):
         try:
             config = get_config()
             logger.info(f"Config loaded: {config}")
-            slack_config = config.im_platforms[0]  # Assuming first platform is Slack
+            slack_config = config.get_im_platform_by_key("slack")
             logger.info(f"Slack config: {slack_config}")
             slack_service = IMServiceFactory.create_service("slack", slack_config.model_dump())
             logger.info(f"Slack service created: {slack_service}")
@@ -73,7 +73,7 @@ async def handle_teams(request: Request, db: Session = Depends(get_session)):
         request_data = await request.json()
         
         # Create Teams service
-        teams_config = get_config().im_platforms[1]  # Assuming second platform is Teams
+        teams_config = get_config().get_im_platform_by_key("teams")
         teams_service = IMServiceFactory.create_service("teams", teams_config.model_dump())
         
         # Verify request

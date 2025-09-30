@@ -98,6 +98,16 @@ class Config(BaseModel):
         # If we get here, the system wasn't found
         available_names = [system.name for system in self.external_systems]
         raise ValueError(f"External system '{system_name}' not found. Available systems: {available_names}")
+    
+    def get_im_platform_by_key(self, platform_key: str) -> IMPlatformConfig:
+        """Get IM platform configuration by platform key (e.g., 'slack', 'teams')."""
+        for platform in self.im_platforms:
+            if platform.platform.lower() == platform_key.lower():
+                return platform
+        
+        # If we get here, the platform wasn't found
+        available_platforms = [platform.platform for platform in self.im_platforms]
+        raise ValueError(f"IM platform '{platform_key}' not found. Available platforms: {available_platforms}")
 
 
 def load_config(config_path: str) -> Config:
