@@ -1,8 +1,7 @@
 """
-Instant messaging API endpoints.
+Common instant messaging functionality.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 import logging
@@ -11,99 +10,22 @@ from ..database import get_session
 from ..services.oauth2 import OAuth2Service
 from ..services.llm import LLMService
 from ..services.tools import ToolsService
-from ..services.im import IMServiceFactory
-from ..config import Config, get_config
+from ..config import get_config
 from ..models.user import User
 
 logger = logging.getLogger(__name__)
-
-im_router = APIRouter()
-
-
-@im_router.post("/slack")
-async def handle_slack(request: Request, db: Session = Depends(get_session)):
-    """Handle Slack webhook requests."""
-    try:
-        # Get request data
-        request_data = await request.json()
-        logger.info(f"Received Slack request: {request_data}")
-        
-        # Create Slack service
-        try:
-            config = get_config()
-            logger.info(f"Config loaded: {config}")
-            slack_config = config.get_im_platform_by_key("slack")
-            logger.info(f"Slack config: {slack_config}")
-            slack_service = IMServiceFactory.create_service("slack", slack_config.model_dump())
-            logger.info(f"Slack service created: {slack_service}")
-        except Exception as e:
-            logger.error(f"Error creating Slack service: {e}")
-            raise HTTPException(status_code=500, detail=f"Service creation error: {str(e)}")
-        
-        # Verify request
-        if not slack_service.verify_request(request_data):
-            raise HTTPException(status_code=401, detail="Invalid request signature")
-        
-        # Parse message
-        message_data = slack_service.parse_message(request_data)
-        logger.info(f"Parsed message: {message_data}")
-        
-        if message_data["type"] == "challenge":
-            return {"challenge": message_data["challenge"]}
-        
-        if message_data["type"] == "message":
-            return await handle_user_message(
-                message_data, slack_service, db
-            )
-        
-        return {"status": "ok"}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Slack webhook error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@im_router.post("/teams")
-async def handle_teams(request: Request, db: Session = Depends(get_session)):
-    """Handle Microsoft Teams webhook requests."""
-    try:
-        # Get request data
-        request_data = await request.json()
-        
-        # Create Teams service
-        teams_config = get_config().get_im_platform_by_key("teams")
-        teams_service = IMServiceFactory.create_service("teams", teams_config.model_dump())
-        
-        # Verify request
-        if not teams_service.verify_request(request_data):
-            raise HTTPException(status_code=401, detail="Invalid request signature")
-        
-        # Parse message
-        message_data = teams_service.parse_message(request_data)
-        
-        if message_data["type"] == "message":
-            return await handle_user_message(
-                message_data, teams_service, db
-            )
-        
-        return {"status": "ok"}
-        
-    except Exception as e:
-        logger.error(f"Teams webhook error: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 async def handle_user_message(
     message_data: Dict[str, Any],
     im_service: Any,
-    db: Session
+    db: Session,
+    platform: str
 ) -> Dict[str, Any]:
     """Handle user message and generate response."""
     try:
         # Get or create user
-        user = get_or_create_user(db, message_data["user_id"], "slack")  # Platform should be determined from context
+        user = get_or_create_user(db, message_data["user_id"], platform)
         
         # Get conversation history
         conversation_history = get_conversation_history(db, user.id)

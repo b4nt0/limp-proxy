@@ -31,7 +31,7 @@ def test_slack_webhook_challenge(test_client: TestClient):
         "challenge": "test_challenge_123"
     }
     
-    with patch('limp.api.im.IMServiceFactory.create_service') as mock_factory:
+    with patch('limp.api.slack.IMServiceFactory.create_service') as mock_factory:
         mock_service = Mock()
         mock_service.verify_request.return_value = True
         mock_service.parse_message.return_value = {
@@ -40,7 +40,7 @@ def test_slack_webhook_challenge(test_client: TestClient):
         }
         mock_factory.return_value = mock_service
         
-        response = test_client.post("/api/im/slack", json=challenge_data)
+        response = test_client.post("/api/slack/webhook", json=challenge_data)
         assert response.status_code == 200
         assert response.json()["challenge"] == "test_challenge_123"
 
@@ -58,8 +58,8 @@ def test_slack_webhook_message(test_client: TestClient):
         }
     }
     
-    with patch('limp.api.im.IMServiceFactory.create_service') as mock_factory, \
-         patch('limp.api.im.handle_user_message') as mock_handle:
+    with patch('limp.api.slack.IMServiceFactory.create_service') as mock_factory, \
+         patch('limp.api.slack.handle_user_message') as mock_handle:
         
         mock_service = Mock()
         mock_service.verify_request.return_value = True
@@ -74,7 +74,7 @@ def test_slack_webhook_message(test_client: TestClient):
         
         mock_handle.return_value = {"status": "ok"}
         
-        response = test_client.post("/api/im/slack", json=message_data)
+        response = test_client.post("/api/slack/webhook", json=message_data)
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
 
@@ -89,8 +89,8 @@ def test_teams_webhook_message(test_client: TestClient):
         "timestamp": "1234567890.123456"
     }
     
-    with patch('limp.api.im.IMServiceFactory.create_service') as mock_factory, \
-         patch('limp.api.im.handle_user_message') as mock_handle:
+    with patch('limp.api.teams.IMServiceFactory.create_service') as mock_factory, \
+         patch('limp.api.teams.handle_user_message') as mock_handle:
         
         mock_service = Mock()
         mock_service.verify_request.return_value = True
@@ -105,7 +105,7 @@ def test_teams_webhook_message(test_client: TestClient):
         
         mock_handle.return_value = {"status": "ok"}
         
-        response = test_client.post("/api/im/teams", json=message_data)
+        response = test_client.post("/api/teams/webhook", json=message_data)
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
 

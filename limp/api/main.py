@@ -12,7 +12,8 @@ import logging
 
 from ..database import get_session, init_database, create_engine
 from ..config import Config, set_config
-from .im import im_router
+from .slack import slack_router
+from .teams import teams_router
 from .oauth2 import oauth2_router
 from .admin import admin_router
 
@@ -52,7 +53,8 @@ def create_app(app_config: Config) -> FastAPI:
     init_database(engine)
     
     # Include routers
-    app.include_router(im_router, prefix="/api/im", tags=["instant-messaging"])
+    app.include_router(slack_router, prefix="/api/slack", tags=["slack"])
+    app.include_router(teams_router, prefix="/api/teams", tags=["teams"])
     app.include_router(oauth2_router, prefix="/api/oauth2", tags=["oauth2"])
     
     if config.admin.enabled:
