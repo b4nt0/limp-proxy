@@ -110,6 +110,132 @@ def test_teams_webhook_message(test_client: TestClient):
         assert response.json()["status"] == "ok"
 
 
+def test_slack_install_success(test_client: TestClient):
+    """Test successful Slack installation."""
+    with patch('limp.api.slack.exchange_code_for_token') as mock_exchange, \
+         patch('limp.api.slack.store_slack_installation') as mock_store, \
+         patch('limp.api.slack.send_installation_confirmation') as mock_confirm:
+        
+        # Mock successful token exchange
+        mock_exchange.return_value = {
+            "ok": True,
+            "access_token": "xoxb-test-token",
+            "token_type": "bot",
+            "scope": "chat:write,channels:read",
+            "bot_user_id": "U123456",
+            "app_id": "A123456",
+            "team": {
+                "id": "T123456",
+                "name": "Test Team"
+            },
+            "enterprise": {
+                "id": "E123456",
+                "name": "Test Enterprise"
+            },
+            "authed_user": {
+                "id": "U789012",
+                "access_token": "xoxp-user-token",
+                "token_type": "user",
+                "scope": "chat:write"
+            }
+        }
+        
+        # Mock successful storage
+        mock_organization = Mock()
+        mock_organization.organization_id = "T123456"
+        mock_organization.team_name = "Test Team"
+        mock_store.return_value = mock_organization
+        
+        # Mock confirmation sending
+        mock_confirm.return_value = None
+        
+        response = test_client.get("/api/slack/install?code=test_code_123")
+        
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["status"] == "success"
+        assert response_data["message"] == "Slack app installed successfully!"
+        assert response_data["organization_id"] == "T123456"
+        assert response_data["team_name"] == "Test Team"
+        
+        # Verify mocks were called
+        mock_exchange.assert_called_once()
+        mock_store.assert_called_once()
+        mock_confirm.assert_called_once()
+
+
+def test_slack_install_token_exchange_failure(test_client: TestClient):
+    """Test Slack installation with token exchange failure."""
+    with patch('limp.api.slack.exchange_code_for_token') as mock_exchange:
+        # Mock failed token exchange
+        mock_exchange.return_value = {
+            "ok": False,
+            "error": "invalid_code"
+        }
+        
+        response = test_client.get("/api/slack/install?code=invalid_code")
+        
+        assert response.status_code == 400
+        assert "Failed to exchange code for token" in response.json()["detail"]
+
+
+def test_slack_install_storage_failure(test_client: TestClient):
+    """Test Slack installation with storage failure."""
+    with patch('limp.api.slack.exchange_code_for_token') as mock_exchange, \
+         patch('limp.api.slack.store_slack_installation') as mock_store:
+        
+        # Mock successful token exchange
+        mock_exchange.return_value = {
+            "ok": True,
+            "access_token": "xoxb-test-token",
+            "team": {"id": "T123456", "name": "Test Team"}
+        }
+        
+        # Mock storage failure
+        mock_store.side_effect = Exception("Database error")
+        
+        response = test_client.get("/api/slack/install?code=test_code_123")
+        
+        assert response.status_code == 500
+        assert "Internal server error" in response.json()["detail"]
+
+
+def test_slack_install_missing_code(test_client: TestClient):
+    """Test Slack installation with missing authorization code."""
+    response = test_client.get("/api/slack/install")
+    
+    assert response.status_code == 422  # FastAPI validation error
+
+
+def test_slack_install_with_state(test_client: TestClient):
+    """Test Slack installation with state parameter."""
+    with patch('limp.api.slack.exchange_code_for_token') as mock_exchange, \
+         patch('limp.api.slack.store_slack_installation') as mock_store, \
+         patch('limp.api.slack.send_installation_confirmation') as mock_confirm:
+        
+        # Mock successful token exchange
+        mock_exchange.return_value = {
+            "ok": True,
+            "access_token": "xoxb-test-token",
+            "team": {"id": "T123456", "name": "Test Team"}
+        }
+        
+        # Mock successful storage
+        mock_organization = Mock()
+        mock_organization.organization_id = "T123456"
+        mock_organization.team_name = "Test Team"
+        mock_store.return_value = mock_organization
+        
+        # Mock confirmation sending
+        mock_confirm.return_value = None
+        
+        response = test_client.get("/api/slack/install?code=test_code_123&state=test_state_456")
+        
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["status"] == "success"
+
+
 def test_oauth2_authorize(test_client: TestClient):
     """Test OAuth2 authorization start."""
     with patch('limp.api.oauth2.get_system_config') as mock_get_config, \
