@@ -286,6 +286,95 @@ def test_slack_install_with_state(test_client: TestClient):
         assert response_data["status"] == "success"
 
 
+def test_slack_install_empty_team_data(test_client: TestClient):
+    """Test Slack installation with empty team data."""
+    with patch('limp.api.slack.exchange_code_for_token') as mock_exchange, \
+         patch('limp.api.slack.store_slack_installation') as mock_store, \
+         patch('limp.api.slack.send_installation_confirmation') as mock_confirm:
+        
+        # Mock token exchange with empty team data
+        mock_exchange.return_value = {
+            "ok": True,
+            "access_token": "xoxb-test-token",
+            "app_id": "A123456",  # Use app_id as fallback
+            # No team, enterprise, or authed_user keys - they will be None
+        }
+        
+        # Mock successful storage
+        mock_organization = Mock()
+        mock_organization.organization_id = "A123456"  # Should use app_id
+        mock_organization.team_name = None
+        mock_store.return_value = mock_organization
+        
+        # Mock confirmation sending (should be skipped due to empty authed_user)
+        mock_confirm.return_value = None
+        
+        response = test_client.get("/api/slack/install?code=test_code_123")
+        
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["status"] == "success"
+        
+        # Verify that store_slack_installation was called with the token data
+        mock_store.assert_called_once()
+        # Verify that send_installation_confirmation was called (but should skip due to empty authed_user)
+        mock_confirm.assert_called_once()
+
+
+def test_slack_install_empty_authed_user(test_client: TestClient):
+    """Test Slack installation with empty authed_user data."""
+    with patch('limp.api.slack.exchange_code_for_token') as mock_exchange, \
+         patch('limp.api.slack.store_slack_installation') as mock_store, \
+         patch('limp.api.slack.send_installation_confirmation') as mock_confirm:
+        
+        # Mock token exchange with empty authed_user
+        mock_exchange.return_value = {
+            "ok": True,
+            "access_token": "xoxb-test-token",
+            "team": {"id": "T123456", "name": "Test Team"},
+            "authed_user": None  # Explicitly None
+        }
+        
+        # Mock successful storage
+        mock_organization = Mock()
+        mock_organization.organization_id = "T123456"
+        mock_organization.team_name = "Test Team"
+        mock_store.return_value = mock_organization
+        
+        # Mock confirmation sending (should be skipped)
+        mock_confirm.return_value = None
+        
+        response = test_client.get("/api/slack/install?code=test_code_123")
+        
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["status"] == "success"
+        
+        # Verify that send_installation_confirmation was called but should skip
+        mock_confirm.assert_called_once()
+
+
+def test_slack_install_no_organization_id(test_client: TestClient):
+    """Test Slack installation with no organization identifier."""
+    with patch('limp.api.slack.exchange_code_for_token') as mock_exchange, \
+         patch('limp.api.slack.store_slack_installation') as mock_store:
+        
+        # Mock token exchange with no team_id or app_id
+        mock_exchange.return_value = {
+            "ok": True,
+            "access_token": "xoxb-test-token",
+            # No team, enterprise, authed_user, or app_id keys - all will be None
+        }
+        
+        # Mock storage failure due to no organization ID
+        mock_store.side_effect = ValueError("No organization identifier found in token data (neither team_id nor app_id)")
+        
+        response = test_client.get("/api/slack/install?code=test_code_123")
+        
+        assert response.status_code == 500
+        assert "Internal server error" in response.json()["detail"]
+
+
 def test_oauth2_authorize(test_client: TestClient):
     """Test OAuth2 authorization start."""
     with patch('limp.api.oauth2.get_system_config') as mock_get_config, \

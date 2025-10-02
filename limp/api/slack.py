@@ -113,6 +113,8 @@ async def exchange_code_for_token(code: str, client_id: str, client_secret: str)
 async def store_slack_installation(token_data: Dict[str, Any], db: Session) -> SlackOrganization:
     """Store Slack installation data in database."""
     try:
+        logger.debug(f"Storing Slack installation: {token_data}")
+
         # Extract data from token response
         access_token = token_data.get("access_token")
         token_type = token_data.get("token_type", "bot")
@@ -120,25 +122,28 @@ async def store_slack_installation(token_data: Dict[str, Any], db: Session) -> S
         bot_user_id = token_data.get("bot_user_id")
         app_id = token_data.get("app_id")
         
-        # Team information
-        team = token_data.get("team", {})
-        team_id = team.get("id")
-        team_name = team.get("name")
+        # Team information (can be empty)
+        team = token_data.get("team")
+        team_id = team.get("id") if team else None
+        team_name = team.get("name") if team else None
         
-        # Enterprise information
-        enterprise = token_data.get("enterprise", {})
-        enterprise_id = enterprise.get("id")
-        enterprise_name = enterprise.get("name")
+        # Enterprise information (can be empty)
+        enterprise = token_data.get("enterprise")
+        enterprise_id = enterprise.get("id") if enterprise else None
+        enterprise_name = enterprise.get("name") if enterprise else None
         
-        # Authed user information
-        authed_user = token_data.get("authed_user", {})
-        authed_user_id = authed_user.get("id")
-        authed_user_access_token = authed_user.get("access_token")
-        authed_user_token_type = authed_user.get("token_type")
-        authed_user_scope = authed_user.get("scope")
+        # Authed user information (can be empty)
+        authed_user = token_data.get("authed_user")
+        authed_user_id = authed_user.get("id") if authed_user else None
+        authed_user_access_token = authed_user.get("access_token") if authed_user else None
+        authed_user_token_type = authed_user.get("token_type") if authed_user else None
+        authed_user_scope = authed_user.get("scope") if authed_user else None
         
-        # Use team_id as organization_id
-        organization_id = team_id
+        # Use team_id as organization_id, fallback to app_id if no team
+        organization_id = team_id or token_data.get("app_id")
+        
+        if not organization_id:
+            raise ValueError("No organization identifier found in token data (neither team_id nor app_id)")
         
         # Check if organization already exists
         existing_org = db.query(SlackOrganization).filter(
@@ -187,6 +192,7 @@ async def store_slack_installation(token_data: Dict[str, Any], db: Session) -> S
             
     except Exception as e:
         logger.error(f"Error storing Slack installation: {e}")
+        logger.error(f"Slack token data: {token_data}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to store installation data")
 
@@ -194,12 +200,17 @@ async def store_slack_installation(token_data: Dict[str, Any], db: Session) -> S
 async def send_installation_confirmation(token_data: Dict[str, Any], slack_config) -> None:
     """Send confirmation DM to the installing user."""
     try:
-        authed_user = token_data.get("authed_user", {})
+        # Check if authed_user data exists and is not empty
+        authed_user = token_data.get("authed_user")
+        if not authed_user:
+            logger.info("No authed user data available for confirmation DM - skipping")
+            return
+            
         authed_user_id = authed_user.get("id")
         authed_user_access_token = authed_user.get("access_token")
         
         if not authed_user_id or not authed_user_access_token:
-            logger.warning("No authed user data available for confirmation DM")
+            logger.info("Incomplete authed user data (missing ID or access token) - skipping confirmation DM")
             return
         
         # Send DM to the installing user
