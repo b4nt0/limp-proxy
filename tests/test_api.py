@@ -10,9 +10,59 @@ from limp.api.main import create_app
 from limp.config import Config, DatabaseConfig, LLMConfig
 
 
-def test_root_endpoint(test_client: TestClient):
-    """Test root endpoint."""
+def test_root_page_with_slack_configured(test_client: TestClient):
+    """Test root page when Slack is configured."""
     response = test_client.get("/")
+    assert response.status_code == 200
+    assert "<html" in response.content.decode("utf-8")
+    assert "Install to Slack" in response.content.decode("utf-8")
+    assert "slack.com/oauth/v2/authorize" in response.content.decode("utf-8")
+
+
+def test_root_page_without_slack_configured(test_client: TestClient):
+    """Test root page when Slack is not configured."""
+    # Create a test app without Slack configuration
+    from limp.config import AdminConfig, IMPlatformConfig, ExternalSystemConfig, OAuth2Config
+    
+    test_config_no_slack = Config(
+        database=DatabaseConfig(url="sqlite:///:memory:"),
+        llm=LLMConfig(
+            api_key="test-api-key",
+            model="gpt-4",
+            max_tokens=1000,
+            temperature=0.7
+        ),
+        admin=AdminConfig(enabled=True, username="admin", password="admin123"),
+        im_platforms=[],  # No Slack configured
+        external_systems=[
+            ExternalSystemConfig(
+                name="test-system",
+                oauth2=OAuth2Config(
+                    client_id="test-client-id",
+                    client_secret="test-client-secret",
+                    authorization_url="https://example.com/oauth/authorize",
+                    token_url="https://example.com/oauth/token",
+                    redirect_uri="http://localhost:8000/callback"
+                ),
+                openapi_spec="https://example.com/api/openapi.json",
+                base_url="https://example.com/api"
+            )
+        ],
+    )
+    
+    test_app_no_slack = create_app(test_config_no_slack)
+    test_client_no_slack = TestClient(test_app_no_slack)
+    
+    response = test_client_no_slack.get("/")
+    assert response.status_code == 200
+    assert "<html" in response.content.decode("utf-8")
+    assert "Slack Not Configured" in response.content.decode("utf-8")
+    assert "Configuration Error" in response.content.decode("utf-8")
+
+
+def test_ping_endpoint(test_client: TestClient):
+    """Test ping endpoint."""
+    response = test_client.get("/api/ping")
     assert response.status_code == 200
     assert "message" in response.json()
 

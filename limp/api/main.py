@@ -64,7 +64,28 @@ def create_app(app_config: Config) -> FastAPI:
         app.include_router(admin_router, prefix="/admin", tags=["admin"])
     
     @app.get("/")
-    async def root():
+    async def root(request: Request):
+        """Root page with Slack installation button."""
+        config = get_config()
+        bot_url = str(request.base_url).rstrip('/')
+        
+        # Get Slack configuration
+        try:
+            slack_config = config.get_im_platform_by_key("slack")
+            slack_client_id = slack_config.client_id
+        except ValueError:
+            # Slack not configured
+            slack_client_id = None
+        
+        return templates.TemplateResponse("install.html", {
+            "request": request,
+            "title": "LIMP - LLM IM Proxy",
+            "bot_url": bot_url,
+            "slack_client_id": slack_client_id
+        })
+    
+    @app.get("/api/ping")
+    async def ping():
         return {"message": "LLM IM Proxy (LIMP) is running"}
     
     @app.get("/health")

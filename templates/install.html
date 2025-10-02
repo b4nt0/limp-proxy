@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            padding: 3rem;
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+        .subtitle {
+            color: #7f8c8d;
+            margin-bottom: 2rem;
+            font-size: 1.1rem;
+        }
+        .description {
+            color: #5a6c7d;
+            margin-bottom: 2.5rem;
+            line-height: 1.6;
+            font-size: 1rem;
+        }
+        .install-button {
+            display: inline-block;
+            background: #4CAF50;
+            color: white;
+            text-decoration: none;
+            padding: 1rem 2rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+        }
+        .install-button:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
+        }
+        .install-button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .features {
+            margin-top: 2rem;
+            text-align: left;
+        }
+        .feature {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1rem;
+            color: #5a6c7d;
+        }
+        .feature-icon {
+            width: 20px;
+            height: 20px;
+            margin-right: 0.75rem;
+            color: #4CAF50;
+        }
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            border-left: 4px solid #c62828;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 LIMP</h1>
+        <p class="subtitle">LLM IM Proxy</p>
+        <p class="description">
+            Connect your instant messaging platforms with powerful LLM capabilities. 
+            Get AI assistance directly in your chat applications.
+        </p>
+        
+        {% if slack_client_id %}
+            <a href="https://slack.com/oauth/v2/authorize?client_id={{ slack_client_id }}&scope=chat:write,channels:read,users:read&redirect_uri={{ bot_url }}/api/slack/install" 
+               class="install-button">
+                📱 Install to Slack
+            </a>
+        {% else %}
+            <button class="install-button" disabled>
+                ⚠️ Slack Not Configured
+            </button>
+            <div class="error-message">
+                <strong>Configuration Error:</strong> Slack is not properly configured. 
+                Please check your configuration file and ensure Slack credentials are provided.
+            </div>
+        {% endif %}
+        
+        <div class="features">
+            <div class="feature">
+                <span class="feature-icon">✨</span>
+                <span>AI-powered assistance in your chat</span>
+            </div>
+            <div class="feature">
+                <span class="feature-icon">🔗</span>
+                <span>Connect to external systems</span>
+            </div>
+            <div class="feature">
+                <span class="feature-icon">🔒</span>
+                <span>Secure OAuth2 authentication</span>
+            </div>
+            <div class="feature">
+                <span class="feature-icon">⚡</span>
+                <span>Real-time responses</span>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
