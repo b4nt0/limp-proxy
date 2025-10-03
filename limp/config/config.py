@@ -73,6 +73,11 @@ class AlertConfig(BaseModel):
     webhook_url: Optional[str] = None
 
 
+class LoggingConfig(BaseModel):
+    """Logging configuration."""
+    level: str = Field(default="INFO", description="Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
+
+
 class Config(BaseModel):
     """Main configuration model."""
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
@@ -81,6 +86,7 @@ class Config(BaseModel):
     im_platforms: List[IMPlatformConfig] = Field(default_factory=list)
     admin: AdminConfig = Field(default_factory=AdminConfig)
     alerts: AlertConfig = Field(default_factory=AlertConfig)
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
     max_iterations: int = Field(default=10)
     prompts_dir: str = Field(default="./prompts")
     context_files_dir: str = Field(default="./context")

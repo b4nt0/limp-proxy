@@ -48,3 +48,6 @@ max_iterations: 10
 prompts_dir: "./prompts"
 context_files_dir: "./context"
 
+logging:
+  level: "INFO"
+
