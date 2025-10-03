@@ -42,11 +42,12 @@ class IMService(ABC):
 class SlackService(IMService):
     """Slack integration service."""
     
-    def __init__(self, client_id: str, client_secret: str, signing_secret: str, bot_token: Optional[str] = None):
+    def __init__(self, client_id: str, client_secret: str, signing_secret: str, bot_token: Optional[str] = None, app_id: Optional[str] = None):
         self.client_id = client_id
         self.client_secret = client_secret
         self.signing_secret = signing_secret
         self.bot_token = bot_token
+        self.app_id = app_id
     
     def verify_request(self, request_data: Dict[str, Any]) -> bool:
         """Verify Slack request using signing secret."""
@@ -64,7 +65,15 @@ class SlackService(IMService):
         
         if request_data.get("type") == "event_callback":
             event = request_data.get("event", {})
+            
+            # Ignore messages from our own bot to prevent infinite loops
+            # Only ignore if event has app_id and it matches our app_id
+            if self.app_id and event.get("app_id") == self.app_id:
+                logger.info(f"Ignoring message from own app_id: {self.app_id}")
+                return {"type": "ignored"}
+            
             # Handle both message and app_mention events
+            # Skip messages from other bots (but not our own, which we already filtered above)
             if event.get("type") in ["message", "app_mention"] and not event.get("bot_id"):
                 return {
                     "type": "message",
@@ -212,7 +221,8 @@ class IMServiceFactory:
                 client_id=config["client_id"],
                 client_secret=config["client_secret"],
                 signing_secret=config.get("signing_secret", ""),
-                bot_token=config.get("bot_token")
+                bot_token=config.get("bot_token"),
+                app_id=config.get("app_id")
             )
         elif platform.lower() == "teams":
             return TeamsService(

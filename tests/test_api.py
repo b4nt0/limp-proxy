@@ -129,6 +129,34 @@ def test_slack_webhook_message(test_client: TestClient):
         assert response.json()["status"] == "ok"
 
 
+def test_slack_webhook_ignored_message(test_client: TestClient):
+    """Test Slack webhook ignores messages from own bot."""
+    # Message from own bot (same event.app_id as configured)
+    bot_message_data = {
+        "type": "event_callback",
+        "api_app_id": "A09JTJR1R40",
+        "event": {
+            "type": "message",
+            "user": "U09JV5N35MW",
+            "channel": "D09JV5N5B8Q",
+            "text": "There was an issue communicating with the AI service. Please try again.",
+            "ts": "1759512330.731609",
+            "bot_id": "B09JV5N2K96",
+            "app_id": "A09JTJR1R40"  # Matches configured app_id
+        }
+    }
+    
+    with patch('limp.api.slack.IMServiceFactory.create_service') as mock_factory:
+        mock_service = Mock()
+        mock_service.verify_request.return_value = True
+        mock_service.parse_message.return_value = {"type": "ignored"}
+        mock_factory.return_value = mock_service
+        
+        response = test_client.post("/api/slack/webhook", json=bot_message_data)
+        assert response.status_code == 200
+        assert response.json()["status"] == "ignored"
+
+
 def test_teams_webhook_message(test_client: TestClient):
     """Test Teams webhook message handling."""
     message_data = {

@@ -14,7 +14,8 @@ class TestSlackService:
         self.slack_service = SlackService(
             client_id="test_client_id",
             client_secret="test_client_secret",
-            signing_secret="test_signing_secret"
+            signing_secret="test_signing_secret",
+            app_id="A09JTJR1R40"
         )
     
     def test_parse_message_challenge(self):
@@ -210,6 +211,120 @@ class TestSlackService:
         
         # Current implementation returns True as placeholder
         assert result is True
+
+    def test_parse_message_ignore_own_bot(self):
+        """Test that messages from own bot are ignored to prevent infinite loops."""
+        # This simulates the exact message structure from the user's example
+        bot_message_data = {
+            'token': 'GV6o3ZOfViTisC2PolCOzAHt',
+            'team_id': 'T3AM9MZLH',
+            'context_team_id': 'T3AM9MZLH',
+            'context_enterprise_id': None,
+            'api_app_id': 'A09JTJR1R40',
+            'event': {
+                'user': 'U09JV5N35MW',
+                'type': 'message',
+                'ts': '1759512330.731609',
+                'bot_id': 'B09JV5N2K96',
+                'app_id': 'A09JTJR1R40',  # This matches our app_id
+                'text': 'There was an issue communicating with the AI service. Please try again.',
+                'team': 'T3AM9MZLH',
+                'bot_profile': {
+                    'id': 'B09JV5N2K96',
+                    'deleted': False,
+                    'name': 'LIMP assistant',
+                    'updated': 1759267388,
+                    'app_id': 'A09JTJR1R40',
+                    'user_id': 'U09JV5N35MW',
+                    'icons': {
+                        'image_36': 'https://a.slack-edge.com/80588/img/plugins/app/bot_36.png',
+                        'image_48': 'https://a.slack-edge.com/80588/img/plugins/app/bot_48.png',
+                        'image_72': 'https://a.slack-edge.com/80588/img/plugins/app/service_72.png'
+                    },
+                    'team_id': 'T3AM9MZLH'
+                },
+                'thread_ts': '1759512327.907089',
+                'parent_user_id': 'U3B9SMXQT',
+                'blocks': [{
+                    'type': 'rich_text',
+                    'block_id': 'jdPtg',
+                    'elements': [{
+                        'type': 'rich_text_section',
+                        'elements': [{
+                            'type': 'text',
+                            'text': 'There was an issue communicating with the AI service. Please try again.'
+                        }]
+                    }]
+                }],
+                'channel': 'D09JV5N5B8Q',
+                'event_ts': '1759512330.731609',
+                'channel_type': 'im'
+            },
+            'type': 'event_callback',
+            'event_id': 'Ev09JKU58UDU',
+            'event_time': 1759512330,
+            'authorizations': [{
+                'enterprise_id': None,
+                'team_id': 'T3AM9MZLH',
+                'user_id': 'U09JV5N35MW',
+                'is_bot': True,
+                'is_enterprise_install': False
+            }],
+            'is_ext_shared_channel': False,
+            'event_context': '4-eyJldCI6Im1lc3NhZ2UiLCJ0aWQiOiJUM0FNOU1aTEgiLCJhaWQiOiJBMDlKVEpSMVI0MCIsImNpZCI6IkQwOUpWNU41QjhRIn0'
+        }
+        
+        result = self.slack_service.parse_message(bot_message_data)
+        
+        # Should be ignored because event.app_id matches our app_id
+        assert result["type"] == "ignored"
+
+    def test_parse_message_allow_other_bot(self):
+        """Test that messages from other bots are not ignored."""
+        other_bot_message_data = {
+            "type": "event_callback",
+            "api_app_id": "A_DIFFERENT_APP_ID",
+            "event": {
+                "type": "message",
+                "user": "U123456",
+                "channel": "C123456",
+                "text": "Hello from another bot!",
+                "ts": "1234567890.123456",
+                "app_id": "A_DIFFERENT_APP_ID"  # Different app_id
+            }
+        }
+        
+        result = self.slack_service.parse_message(other_bot_message_data)
+        
+        # Should be processed normally
+        assert result["type"] == "message"
+        assert result["user_id"] == "U123456"
+        assert result["channel"] == "C123456"
+        assert result["text"] == "Hello from another bot!"
+
+    def test_parse_message_no_app_id_not_ignored(self):
+        """Test that messages without event.app_id are not ignored."""
+        message_without_app_id = {
+            "type": "event_callback",
+            "api_app_id": "A09JTJR1R40",
+            "event": {
+                "type": "message",
+                "user": "U123456",
+                "channel": "C123456",
+                "text": "Hello from user without app_id!",
+                "ts": "1234567890.123456"
+                # No app_id field in event
+            }
+        }
+        
+        result = self.slack_service.parse_message(message_without_app_id)
+        
+        # Should be processed normally even though api_app_id matches our app_id
+        # because event.app_id is missing
+        assert result["type"] == "message"
+        assert result["user_id"] == "U123456"
+        assert result["channel"] == "C123456"
+        assert result["text"] == "Hello from user without app_id!"
 
 
 class TestTeamsService:
