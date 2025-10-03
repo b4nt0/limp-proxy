@@ -259,7 +259,18 @@ async def handle_slack_webhook(request: Request, db: Session = Depends(get_sessi
             logger.info(f"Config loaded: {config}")
             slack_config = config.get_im_platform_by_key("slack")
             logger.info(f"Slack config: {slack_config}")
-            slack_service = IMServiceFactory.create_service("slack", slack_config.model_dump())
+            
+            # Get bot token from database for the organization
+            # For now, we'll use the first available organization
+            # In a real implementation, you'd need to determine which organization
+            # the message is coming from based on the request data
+            organization = db.query(SlackOrganization).first()
+            bot_token = organization.access_token if organization else None
+            
+            slack_service = IMServiceFactory.create_service("slack", {
+                **slack_config.model_dump(),
+                "bot_token": bot_token
+            })
             logger.info(f"Slack service created: {slack_service}")
         except Exception as e:
             logger.error(f"Error creating Slack service: {e}")

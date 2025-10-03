@@ -5,6 +5,7 @@ Instant messaging service for Slack and Teams integration.
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 import logging
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -31,15 +32,21 @@ class IMService(ABC):
     def send_message(self, channel: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """Send message to IM platform."""
         pass
+    
+    @abstractmethod
+    def reply_to_message(self, channel: str, content: str, original_message_ts: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """Reply to a specific message in the IM platform."""
+        pass
 
 
 class SlackService(IMService):
     """Slack integration service."""
     
-    def __init__(self, client_id: str, client_secret: str, signing_secret: str):
+    def __init__(self, client_id: str, client_secret: str, signing_secret: str, bot_token: Optional[str] = None):
         self.client_id = client_id
         self.client_secret = client_secret
         self.signing_secret = signing_secret
+        self.bot_token = bot_token
     
     def verify_request(self, request_data: Dict[str, Any]) -> bool:
         """Verify Slack request using signing secret."""
@@ -64,7 +71,8 @@ class SlackService(IMService):
                     "user_id": event.get("user"),
                     "channel": event.get("channel") or request_data.get("channel"),
                     "text": event.get("text"),
-                    "timestamp": event.get("ts")
+                    "timestamp": event.get("ts"),
+                    "thread_ts": event.get("thread_ts")  # Thread timestamp for replies
                 }
         
         return {"type": "unknown"}
@@ -87,6 +95,54 @@ class SlackService(IMService):
         # For now, return True as placeholder
         logger.info(f"Sending message to Slack channel {channel}: {content}")
         return True
+    
+    def reply_to_message(self, channel: str, content: str, original_message_ts: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """Reply to a message in Slack - always use threads when possible."""
+        if not self.bot_token:
+            logger.error("No bot token available for Slack reply")
+            return False
+        
+        try:
+            # Prepare the message payload
+            # Always use thread_ts to create a threaded reply, even for DMs
+            payload = {
+                "channel": channel,
+                "text": content,
+                "thread_ts": original_message_ts  # This creates a threaded reply
+            }
+            
+            # Add blocks if provided in metadata
+            if metadata and metadata.get("blocks"):
+                payload["blocks"] = metadata["blocks"]
+            
+            # Send the threaded reply using synchronous requests
+            try:
+                response = requests.post(
+                    "https://slack.com/api/chat.postMessage",
+                    headers={
+                        "Authorization": f"Bearer {self.bot_token}",
+                        "Content-Type": "application/json"
+                    },
+                    json=payload,
+                    timeout=10
+                )
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("ok"):
+                    logger.info(f"Successfully sent threaded reply to Slack message {original_message_ts}")
+                    return True
+                else:
+                    logger.error(f"Slack API error: {result.get('error')}")
+                    return False
+                    
+            except requests.exceptions.RequestException as e:
+                logger.error(f"HTTP error sending Slack reply: {e}")
+                return False
+            
+        except Exception as e:
+            logger.error(f"Error sending Slack reply: {e}")
+            return False
 
 
 class TeamsService(IMService):
@@ -134,6 +190,15 @@ class TeamsService(IMService):
         # For now, return True as placeholder
         logger.info(f"Sending message to Teams channel {channel}: {content}")
         return True
+    
+    def reply_to_message(self, channel: str, content: str, original_message_ts: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """Reply to a message in Teams."""
+        # For Teams, since DMs don't support threads, we send a new message
+        # This is still a "reply" conceptually, but implemented as a new message
+        # Implementation would use Teams Bot Framework
+        # For now, return True as placeholder
+        logger.info(f"Replying to Teams message {original_message_ts} in channel {channel} (as new message): {content}")
+        return True
 
 
 class IMServiceFactory:
@@ -146,7 +211,8 @@ class IMServiceFactory:
             return SlackService(
                 client_id=config["client_id"],
                 client_secret=config["client_secret"],
-                signing_secret=config.get("signing_secret", "")
+                signing_secret=config.get("signing_secret", ""),
+                bot_token=config.get("bot_token")
             )
         elif platform.lower() == "teams":
             return TeamsService(

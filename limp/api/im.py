@@ -46,10 +46,12 @@ async def handle_user_message(
             db
         )
         
-        # Send response
-        im_service.send_message(
+        # Send response - always use reply_to_message
+        # The specific implementation (thread vs new message) is handled by each platform
+        im_service.reply_to_message(
             message_data["channel"],
             response["content"],
+            message_data.get("timestamp"),  # Use the original message timestamp
             response.get("metadata")
         )
         
