@@ -2,7 +2,7 @@
 Main FastAPI application for LIMP system.
 """
 
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -82,6 +82,20 @@ def create_app(app_config: Config) -> FastAPI:
             "title": "LIMP - LLM IM Proxy",
             "bot_url": bot_url,
             "slack_client_id": slack_client_id
+        })
+    
+    @app.get("/install-success", response_class=HTMLResponse)
+    async def install_success(
+        request: Request,
+        system: str = Query(..., description="Platform system (slack or teams)"),
+        organization: str = Query(None, description="Organization name")
+    ):
+        """Installation success page."""
+        return templates.TemplateResponse("install-success.html", {
+            "request": request,
+            "title": "Installation Successful - LIMP",
+            "system": system,
+            "organization_name": organization
         })
     
     @app.get("/api/ping")

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            padding: 3rem;
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+        }
+        .success-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+        .subtitle {
+            color: #7f8c8d;
+            margin-bottom: 2rem;
+            font-size: 1.1rem;
+        }
+        .success-message {
+            color: #27ae60;
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background: #d5f4e6;
+            border-radius: 8px;
+            border-left: 4px solid #27ae60;
+        }
+        .organization-info {
+            background: #f8f9fa;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin: 2rem 0;
+            text-align: left;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .info-row:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+        .info-label {
+            font-weight: 600;
+            color: #495057;
+        }
+        .info-value {
+            color: #6c757d;
+        }
+        .next-steps {
+            margin-top: 2rem;
+            text-align: left;
+        }
+        .next-steps h3 {
+            color: #2c3e50;
+            margin-bottom: 1rem;
+        }
+        .step {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1rem;
+            color: #5a6c7d;
+        }
+        .step-icon {
+            width: 24px;
+            height: 24px;
+            margin-right: 0.75rem;
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .back-button {
+            display: inline-block;
+            background: #6c757d;
+            color: white;
+            text-decoration: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            margin-top: 2rem;
+            transition: all 0.3s ease;
+        }
+        .back-button:hover {
+            background: #5a6268;
+            transform: translateY(-1px);
+        }
+        .platform-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .platform-slack {
+            background: #4A154B;
+            color: white;
+        }
+        .platform-teams {
+            background: #6264A7;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">🎉</div>
+        <h1>Installation Successful!</h1>
+        <p class="subtitle">Your LIMP bot is now ready to use</p>
+        
+        <div class="success-message">
+            ✅ Successfully installed to {{ system|title }}
+        </div>
+        
+        <div class="organization-info">
+            <div class="info-row">
+                <span class="info-label">Platform:</span>
+                <span class="platform-badge platform-{{ system }}">{{ system|title }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Organization:</span>
+                <span class="info-value">{{ organization_name or 'N/A' }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Status:</span>
+                <span class="info-value" style="color: #27ae60; font-weight: 600;">Active</span>
+            </div>
+        </div>
+        
+        <div class="next-steps">
+            <h3>What's Next?</h3>
+            <div class="step">
+                <span class="step-icon">1️⃣</span>
+                <span>Go back to your {{ system|title }} workspace</span>
+            </div>
+            <div class="step">
+                <span class="step-icon">2️⃣</span>
+                <span>Start a conversation with the bot</span>
+            </div>
+            <div class="step">
+                <span class="step-icon">3️⃣</span>
+                <span>Try asking: "Help me with my tasks" or "What can you do?"</span>
+            </div>
+            <div class="step">
+                <span class="step-icon">4️⃣</span>
+                <span>Connect to external systems when prompted</span>
+            </div>
+        </div>
+        
+        <a href="/" class="back-button">← Back to Home</a>
+    </div>
+</body>
+</html>

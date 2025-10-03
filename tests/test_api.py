@@ -199,14 +199,10 @@ def test_slack_install_success(test_client: TestClient):
         # Mock confirmation sending
         mock_confirm.return_value = None
         
-        response = test_client.get("/api/slack/install?code=test_code_123")
+        response = test_client.get("/api/slack/install?code=test_code_123", follow_redirects=False)
         
-        assert response.status_code == 200
-        response_data = response.json()
-        assert response_data["status"] == "success"
-        assert response_data["message"] == "Slack app installed successfully!"
-        assert response_data["organization_id"] == "T123456"
-        assert response_data["team_name"] == "Test Team"
+        assert response.status_code == 302  # Redirect response
+        assert response.headers["location"] == "/install-success?system=slack&organization=Test%20Team"
         
         # Verify mocks were called
         mock_exchange.assert_called_once()
@@ -279,11 +275,10 @@ def test_slack_install_with_state(test_client: TestClient):
         # Mock confirmation sending
         mock_confirm.return_value = None
         
-        response = test_client.get("/api/slack/install?code=test_code_123&state=test_state_456")
+        response = test_client.get("/api/slack/install?code=test_code_123&state=test_state_456", follow_redirects=False)
         
-        assert response.status_code == 200
-        response_data = response.json()
-        assert response_data["status"] == "success"
+        assert response.status_code == 302  # Redirect response
+        assert response.headers["location"] == "/install-success?system=slack&organization=Test%20Team"
 
 
 def test_slack_install_empty_team_data(test_client: TestClient):
@@ -309,11 +304,10 @@ def test_slack_install_empty_team_data(test_client: TestClient):
         # Mock confirmation sending (should be skipped due to empty authed_user)
         mock_confirm.return_value = None
         
-        response = test_client.get("/api/slack/install?code=test_code_123")
+        response = test_client.get("/api/slack/install?code=test_code_123", follow_redirects=False)
         
-        assert response.status_code == 200
-        response_data = response.json()
-        assert response_data["status"] == "success"
+        assert response.status_code == 302  # Redirect response
+        assert response.headers["location"] == "/install-success?system=slack&organization=A123456"
         
         # Verify that store_slack_installation was called with the token data
         mock_store.assert_called_once()
@@ -344,11 +338,10 @@ def test_slack_install_empty_authed_user(test_client: TestClient):
         # Mock confirmation sending (should be skipped)
         mock_confirm.return_value = None
         
-        response = test_client.get("/api/slack/install?code=test_code_123")
+        response = test_client.get("/api/slack/install?code=test_code_123", follow_redirects=False)
         
-        assert response.status_code == 200
-        response_data = response.json()
-        assert response_data["status"] == "success"
+        assert response.status_code == 302  # Redirect response
+        assert response.headers["location"] == "/install-success?system=slack&organization=Test%20Team"
         
         # Verify that send_installation_confirmation was called but should skip
         mock_confirm.assert_called_once()
@@ -373,6 +366,45 @@ def test_slack_install_no_organization_id(test_client: TestClient):
         
         assert response.status_code == 500
         assert "Internal server error" in response.json()["detail"]
+
+
+def test_install_success_page_slack(test_client: TestClient):
+    """Test installation success page for Slack."""
+    response = test_client.get("/install-success?system=slack&organization=Test%20Team")
+    
+    assert response.status_code == 200
+    assert "<html" in response.content.decode("utf-8")
+    assert "Installation Successful!" in response.content.decode("utf-8")
+    assert "Test Team" in response.content.decode("utf-8")
+    assert "Slack" in response.content.decode("utf-8")
+
+
+def test_install_success_page_teams(test_client: TestClient):
+    """Test installation success page for Teams."""
+    response = test_client.get("/install-success?system=teams&organization=Test%20Organization")
+    
+    assert response.status_code == 200
+    assert "<html" in response.content.decode("utf-8")
+    assert "Installation Successful!" in response.content.decode("utf-8")
+    assert "Test Organization" in response.content.decode("utf-8")
+    assert "Teams" in response.content.decode("utf-8")
+
+
+def test_install_success_page_no_organization(test_client: TestClient):
+    """Test installation success page without organization name."""
+    response = test_client.get("/install-success?system=slack")
+    
+    assert response.status_code == 200
+    assert "<html" in response.content.decode("utf-8")
+    assert "Installation Successful!" in response.content.decode("utf-8")
+    assert "N/A" in response.content.decode("utf-8")  # Should show N/A for missing organization
+
+
+def test_install_success_page_missing_system(test_client: TestClient):
+    """Test installation success page with missing system parameter."""
+    response = test_client.get("/install-success")
+    
+    assert response.status_code == 422  # FastAPI validation error for missing required parameter
 
 
 def test_oauth2_authorize(test_client: TestClient):

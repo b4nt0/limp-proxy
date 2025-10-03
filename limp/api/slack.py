@@ -74,12 +74,10 @@ async def handle_slack_install(
         
         logger.info(f"Successfully installed Slack app for organization: {organization.organization_id}")
         
-        return {
-            "status": "success",
-            "message": "Slack app installed successfully!",
-            "organization_id": organization.organization_id,
-            "team_name": organization.team_name
-        }
+        # Redirect to success page
+        from fastapi.responses import RedirectResponse
+        success_url = f"/install-success?system=slack&organization={organization.team_name or organization.organization_id}"
+        return RedirectResponse(url=success_url, status_code=302)
         
     except HTTPException:
         raise
