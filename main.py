@@ -29,7 +29,16 @@ def configure_logging(log_level: str = "INFO"):
         force=True  # Force reconfiguration even if logging was already configured
     )
     
-    # Automatically configure all loggers under the 'limp' namespace
+    # Configure the base limp logger to ensure all child loggers inherit the level
+    limp_logger = logging.getLogger('limp')
+    limp_logger.setLevel(numeric_level)
+    limp_logger.propagate = True
+    
+    # Also ensure the root logger level is appropriate
+    root_logger = logging.getLogger()
+    root_logger.setLevel(numeric_level)
+    
+    # Automatically configure all existing loggers under the 'limp' namespace
     def configure_limp_loggers():
         """Configure all loggers under the 'limp' namespace to use the specified level."""
         # Get all existing loggers
@@ -38,15 +47,10 @@ def configure_logging(log_level: str = "INFO"):
         # Set level for all loggers that start with 'limp'
         for logger_name in existing_loggers:
             if logger_name.startswith('limp'):
-                logging.getLogger(logger_name).setLevel(numeric_level)
-        
-        # Also set the base 'limp' logger to ensure propagation
-        limp_logger = logging.getLogger('limp')
-        limp_logger.setLevel(numeric_level)
-        limp_logger.propagate = True
+                logger = logging.getLogger(logger_name)
+                logger.setLevel(numeric_level)
+                logger.propagate = True
     
-    configure_limp_loggers()
-
 logger = logging.getLogger(__name__)
 
 
@@ -73,14 +77,38 @@ def main():
         # Create FastAPI app
         app = create_app(config)
         
+        # Reconfigure logging after app creation to catch any new loggers
+        configure_logging(config.logging.level)
+        
         # Start server
         logger.info("Starting LIMP server...")
+        # Configure uvicorn logging to not interfere with our setup
+        uvicorn_log_config = {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": {
+                "default": {
+                    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                },
+            },
+            "handlers": {
+                "default": {
+                    "formatter": "default",
+                    "class": "logging.StreamHandler",
+                    "stream": "ext://sys.stdout",
+                },
+            },
+            "root": {
+                "level": config.logging.level,
+                "handlers": ["default"],
+            },
+        }
+        
         uvicorn.run(
             app,
             host="0.0.0.0",
             port=8000,
-            log_level="info",
-            log_config=None  # Disable uvicorn's logging configuration override
+            log_config=uvicorn_log_config
         )
         
     except Exception as e:
