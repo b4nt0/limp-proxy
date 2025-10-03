@@ -67,7 +67,10 @@ def create_app(app_config: Config) -> FastAPI:
     async def root(request: Request):
         """Root page with Slack installation button."""
         config = get_config()
-        bot_url = str(request.base_url).rstrip('/')
+        
+        # Use consistent bot URL logic
+        from .im import get_bot_url
+        bot_url = get_bot_url(config, request)
         
         # Get Slack configuration
         try:
@@ -79,7 +82,7 @@ def create_app(app_config: Config) -> FastAPI:
         
         return templates.TemplateResponse("install.html", {
             "request": request,
-            "title": "LIMP - LLM IM Proxy",
+            "title": config.bot.name if config.bot.name else "LIMP - LLM IM Proxy",
             "bot_url": bot_url,
             "slack_client_id": slack_client_id
         })

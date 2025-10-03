@@ -145,6 +145,7 @@ class TestAuthenticationFlow:
         mock_primary_system.name = "test-system"
         mock_config = Mock()
         mock_config.get_primary_system.return_value = mock_primary_system
+        mock_config.bot.url = ""  # Empty bot URL to trigger fallback
         mock_get_config.return_value = mock_config
         
         # Mock user creation
@@ -174,7 +175,7 @@ class TestAuthenticationFlow:
         
         # Verify OAuth2 service calls
         mock_oauth2_instance.get_valid_token.assert_called_once_with(1, "test-system")
-        mock_oauth2_instance.generate_auth_url.assert_called_once_with(1, mock_primary_system)
+        mock_oauth2_instance.generate_auth_url.assert_called_once_with(1, mock_primary_system, "http://localhost:8000")
         
         # Verify IM service calls
         self.mock_im_service.get_user_dm_channel.assert_called_once_with("U123456")
@@ -195,6 +196,7 @@ class TestAuthenticationFlow:
         mock_primary_system.name = "test-system"
         mock_config = Mock()
         mock_config.get_primary_system.return_value = mock_primary_system
+        mock_config.bot.url = ""  # Empty bot URL to trigger fallback
         mock_get_config.return_value = mock_config
         
         # Mock user creation
@@ -227,7 +229,7 @@ class TestAuthenticationFlow:
         # Verify OAuth2 service calls
         mock_oauth2_instance.get_valid_token.assert_called_once_with(1, "test-system")
         mock_oauth2_instance.validate_token.assert_called_once_with(mock_token, mock_primary_system)
-        mock_oauth2_instance.generate_auth_url.assert_called_once_with(1, mock_primary_system)
+        mock_oauth2_instance.generate_auth_url.assert_called_once_with(1, mock_primary_system, "http://localhost:8000")
         
         # Verify IM service calls
         self.mock_im_service.get_user_dm_channel.assert_called_once_with("U123456")

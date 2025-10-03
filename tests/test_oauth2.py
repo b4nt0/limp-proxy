@@ -26,17 +26,17 @@ def test_generate_auth_url(test_session):
     system_config = Mock()
     system_config.name = "test_system"
     system_config.oauth2.client_id = "test_client_id"
-    system_config.oauth2.redirect_uri = "http://localhost:8000/callback"
     system_config.oauth2.authorization_url = "https://example.com/oauth/authorize"
     system_config.oauth2.scope = "read write"
     
     # Generate auth URL
-    auth_url = oauth2_service.generate_auth_url(user.id, system_config)
+    bot_url = "https://example.com"
+    auth_url = oauth2_service.generate_auth_url(user.id, system_config, bot_url)
     
     # Verify URL contains expected parameters
     assert "https://example.com/oauth/authorize" in auth_url
     assert "client_id=test_client_id" in auth_url
-    assert "redirect_uri=http://localhost:8000/callback" in auth_url
+    assert f"redirect_uri={bot_url}/api/oauth2/callback/{system_config.name}" in auth_url
     assert "response_type=code" in auth_url
     assert "scope=read write" in auth_url
     assert "state=" in auth_url

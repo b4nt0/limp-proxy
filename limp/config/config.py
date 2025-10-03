@@ -37,7 +37,6 @@ class OAuth2Config(BaseModel):
     client_secret: str
     authorization_url: str
     token_url: str
-    redirect_uri: str
     scope: Optional[str] = None
     test_endpoint: Optional[str] = None  # Optional endpoint for token validation
 
@@ -79,6 +78,12 @@ class LoggingConfig(BaseModel):
     level: str = Field(default="INFO", description="Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
 
 
+class BotConfig(BaseModel):
+    """Bot configuration."""
+    name: str = Field(default="LIMP", description="Display name of this LIMP instance")
+    url: Optional[str] = Field(default=None, description="URL where LIMP is deployed")
+
+
 class Config(BaseModel):
     """Main configuration model."""
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
@@ -88,6 +93,7 @@ class Config(BaseModel):
     admin: AdminConfig = Field(default_factory=AdminConfig)
     alerts: AlertConfig = Field(default_factory=AlertConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    bot: BotConfig = Field(default_factory=BotConfig)
     max_iterations: int = Field(default=10)
     prompts_dir: str = Field(default="./prompts")
     context_files_dir: str = Field(default="./context")

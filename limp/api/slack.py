@@ -293,7 +293,7 @@ async def handle_slack_webhook(request: Request, db: Session = Depends(get_sessi
         
         if message_data["type"] == "message":
             return await handle_user_message(
-                message_data, slack_service, db, "slack"
+                message_data, slack_service, db, "slack", request
             )
         
         return {"status": "ok"}

@@ -1,5 +1,9 @@
 # LIMP Configuration File
 
+bot:
+  name: "LIMP"
+  url: ""
+
 database:
   url: "sqlite:///./limp.db"
   echo: false
@@ -19,7 +23,6 @@ external_systems:
       client_secret: "your-client-secret"
       authorization_url: "https://example.com/oauth/authorize"
       token_url: "https://example.com/oauth/token"
-      redirect_uri: "http://localhost:8000/api/oauth2/callback/example-system"
       scope: "read write"
       test_endpoint: "https://example.com/oauth/introspect"  # Optional: for token validation
     openapi_spec: "https://example.com/api/openapi.json"

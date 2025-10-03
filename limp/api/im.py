@@ -20,15 +20,19 @@ async def handle_user_message(
     message_data: Dict[str, Any],
     im_service: Any,
     db: Session,
-    platform: str
+    platform: str,
+    request: Any = None
 ) -> Dict[str, Any]:
     """Handle user message and generate response."""
     try:
         # Get or create user
         user = get_or_create_user(db, message_data["user_id"], platform)
         
-        # Check primary system authentication
+        # Determine bot URL early
         config = get_config()
+        bot_url = get_bot_url(config, request)
+        
+        # Check primary system authentication
         primary_system = config.get_primary_system()
         
         if primary_system:
@@ -37,7 +41,7 @@ async def handle_user_message(
             
             # If no token or token is invalid, send authorization prompt
             if not token or not oauth2_service.validate_token(token, primary_system):
-                auth_url = oauth2_service.generate_auth_url(user.id, primary_system)
+                auth_url = oauth2_service.generate_auth_url(user.id, primary_system, bot_url)
                 
                 # Send DM with authorization prompt and button
                 authorization_prompt = f"🔐 **Authorization Required**\n\nTo use this bot, you need to authorize access to {primary_system.name}.\n\nClick the button below to authorize:"
@@ -77,7 +81,8 @@ async def handle_user_message(
             oauth2_service,
             llm_service,
             tools_service,
-            db
+            db,
+            bot_url
         )
         
         # Send response - always use reply_to_message
@@ -103,7 +108,8 @@ async def process_llm_workflow(
     oauth2_service: OAuth2Service,
     llm_service: LLMService,
     tools_service: ToolsService,
-    db: Session
+    db: Session,
+    bot_url: str
 ) -> Dict[str, Any]:
     """Process message through LLM workflow."""
     try:
@@ -133,7 +139,7 @@ async def process_llm_workflow(
                 if not auth_token:
                     # Return authorization URL
                     system_config = get_system_config(system_name, system_configs)
-                    auth_url = oauth2_service.generate_auth_url(user.id, system_config)
+                    auth_url = oauth2_service.generate_auth_url(user.id, system_config, bot_url)
                     return {
                         "content": f"Please authorize access to {system_name}: {auth_url}",
                         "metadata": {"auth_url": auth_url}
@@ -203,3 +209,17 @@ def get_system_config(system_name: str, system_configs: list) -> dict:
         if config["name"] == system_name:
             return config
     raise ValueError(f"System {system_name} not found")
+
+
+def get_bot_url(config, request=None) -> str:
+    """Get bot URL from config or fall back to request host."""
+    # First try to use config.bot.url if it's set and not empty
+    if config.bot.url and config.bot.url.strip():
+        return config.bot.url.strip()
+    
+    # Fall back to request host URL if available
+    if request:
+        return str(request.base_url).rstrip('/')
+    
+    # Final fallback
+    return "http://localhost:8000"

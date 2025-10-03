@@ -39,15 +39,13 @@ def test_oauth2_config_creation():
         client_id="test-client-id",
         client_secret="test-client-secret",
         authorization_url="https://example.com/oauth/authorize",
-        token_url="https://example.com/oauth/token",
-        redirect_uri="http://localhost:8000/callback"
+        token_url="https://example.com/oauth/token"
     )
     
     assert config.client_id == "test-client-id"
     assert config.client_secret == "test-client-secret"
     assert config.authorization_url == "https://example.com/oauth/authorize"
     assert config.token_url == "https://example.com/oauth/token"
-    assert config.redirect_uri == "http://localhost:8000/callback"
     assert config.scope is None
 
 

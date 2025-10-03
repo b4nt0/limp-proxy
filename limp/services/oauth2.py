@@ -22,17 +22,20 @@ class OAuth2Service:
     def __init__(self, db_session: Session):
         self.db_session = db_session
     
-    def generate_auth_url(self, user_id: int, system_config: ExternalSystemConfig) -> str:
+    def generate_auth_url(self, user_id: int, system_config: ExternalSystemConfig, bot_url: str) -> str:
         """Generate OAuth2 authorization URL."""
         # Generate state parameter
         state = secrets.token_urlsafe(32)
+        
+        # Construct redirect URI from bot URL
+        redirect_uri = f"{bot_url}/api/oauth2/callback/{system_config.name}"
         
         # Save state to database
         auth_state = AuthState(
             state=state,
             user_id=user_id,
             system_name=system_config.name,
-            redirect_uri=system_config.oauth2.redirect_uri,
+            redirect_uri=redirect_uri,
             expires_at=datetime.utcnow() + timedelta(minutes=10)
         )
         self.db_session.add(auth_state)
@@ -41,7 +44,7 @@ class OAuth2Service:
         # Build authorization URL
         params = {
             "client_id": system_config.oauth2.client_id,
-            "redirect_uri": system_config.oauth2.redirect_uri,
+            "redirect_uri": redirect_uri,
             "state": state,
             "response_type": "code"
         }
