@@ -57,11 +57,12 @@ class SlackService(IMService):
         
         if request_data.get("type") == "event_callback":
             event = request_data.get("event", {})
-            if event.get("type") == "message" and not event.get("bot_id"):
+            # Handle both message and app_mention events
+            if event.get("type") in ["message", "app_mention"] and not event.get("bot_id"):
                 return {
                     "type": "message",
                     "user_id": event.get("user"),
-                    "channel": event.get("channel"),
+                    "channel": event.get("channel") or request_data.get("channel"),
                     "text": event.get("text"),
                     "timestamp": event.get("ts")
                 }
