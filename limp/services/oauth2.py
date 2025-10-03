@@ -11,7 +11,7 @@ import logging
 
 from ..models.user import User
 from ..models.auth import AuthToken, AuthState
-from ..config import OAuth2Config, ExternalSystemConfig
+from ..config import OAuth2Config, ExternalSystemConfig, get_config
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +19,9 @@ logger = logging.getLogger(__name__)
 class OAuth2Service:
     """OAuth2 authentication service."""
     
-    def __init__(self, db_session: Session):
+    def __init__(self, db_session: Session, system_name: Optional[str] = None):
         self.db_session = db_session
+        self.system_name = system_name
     
     def generate_auth_url(self, user_id: int, system_config: ExternalSystemConfig, bot_url: str) -> str:
         """Generate OAuth2 authorization URL."""
@@ -190,12 +191,11 @@ class OAuth2Service:
     
     def _exchange_code_for_token(self, code: str, auth_state: AuthState) -> Optional[Dict[str, Any]]:
         """Exchange authorization code for access token."""
-        # Find system config (this would come from config in real implementation)
-        # For now, we'll use a placeholder
-        system_config = None  # This should be loaded from config
+        # Get system configuration
+        system_config = self._get_system_config(auth_state.system_name)
         
         if not system_config:
-            logger.error("System configuration not found")
+            logger.error(f"System configuration not found for system: {auth_state.system_name}")
             return None
         
         data = {
@@ -239,4 +239,16 @@ class OAuth2Service:
             return None
         
         return datetime.utcnow() + timedelta(seconds=expires_in)
+    
+    def _get_system_config(self, system_name: str) -> Optional[ExternalSystemConfig]:
+        """Get system configuration by name."""
+        try:
+            config = get_config()
+            for system in config.external_systems:
+                if system.name == system_name:
+                    return system
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get system configuration: {e}")
+            return None
 

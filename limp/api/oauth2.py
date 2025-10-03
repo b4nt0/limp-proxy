@@ -30,7 +30,7 @@ async def start_authorization(
             raise HTTPException(status_code=404, detail="System not found")
         
         # Create OAuth2 service
-        oauth2_service = OAuth2Service(db)
+        oauth2_service = OAuth2Service(db, system_name)
         
         # Generate authorization URL
         auth_url = oauth2_service.generate_auth_url(user_id, system_config)
@@ -54,8 +54,8 @@ async def handle_callback(
 ):
     """Handle OAuth2 callback."""
     try:
-        # Create OAuth2 service
-        oauth2_service = OAuth2Service(db)
+        # Create OAuth2 service with system name
+        oauth2_service = OAuth2Service(db, system_name)
         
         # Handle callback
         auth_token = oauth2_service.handle_callback(code, state)
@@ -85,7 +85,7 @@ async def get_authorization_status(
     """Get authorization status for user and system."""
     try:
         # Create OAuth2 service
-        oauth2_service = OAuth2Service(db)
+        oauth2_service = OAuth2Service(db, system_name)
         
         # Check for valid token
         auth_token = oauth2_service.get_valid_token(user_id, system_name)
