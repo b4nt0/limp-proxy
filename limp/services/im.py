@@ -130,6 +130,7 @@ class SlackService(IMService):
             
             # Send the message using synchronous requests
             try:
+                logger.debug(f"Sending message to Slack channel {channel}: {payload}")
                 response = requests.post(
                     "https://slack.com/api/chat.postMessage",
                     headers={
@@ -207,41 +208,11 @@ class SlackService(IMService):
     
     def create_authorization_button(self, auth_url: str, button_text: str, button_description: str, request=None) -> List[Dict[str, Any]]:
         """Create authorization button blocks for Slack."""
-        from ..api.im import get_bot_url
-        from ..config import get_config
+        # Check if URL is localhost (Slack doesn't like localhost URLs in buttons)
+        is_localhost = "localhost" in auth_url or "127.0.0.1" in auth_url
         
-        # Use the existing get_bot_url logic
-        config = get_config()
-        bot_url = get_bot_url(config, request)
-        
-        if bot_url and bot_url != "http://localhost:8000":
-            # Use button with interactivity
-            return [
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f"{button_description}\n\n:lock: Click the button below to authorize:"
-                    }
-                },
-                {
-                    "type": "actions",
-                    "elements": [
-                        {
-                            "type": "button",
-                            "text": {
-                                "type": "plain_text",
-                                "text": f"🔐 {button_text}"
-                            },
-                            "action_id": "authorization_button",
-                            "style": "primary",
-                            "value": auth_url  # Store the auth URL in the button value
-                        }
-                    ]
-                }
-            ]
-        else:
-            # Fallback to hyperlink in text with better aesthetics
+        if is_localhost:
+            # Use hyperlink for localhost URLs
             return [
                 {
                     "type": "section",
@@ -255,7 +226,32 @@ class SlackService(IMService):
                     "elements": [
                         {
                             "type": "mrkdwn",
-                            "text": ":warning: *Development Mode* - Click the link above to authorize"
+                            "text": ":computer: Click the link above to open authorization in your browser"
+                        }
+                    ]
+                }
+            ]
+        else:
+            # Use button for non-localhost URLs
+            return [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"{button_description}\n\n🔒 Click the button below to authorize:"
+                    }
+                },
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {
+                                "type": "plain_text",
+                                "text": f"🔐 {button_text}"
+                            },
+                            "url": auth_url,
+                            "style": "primary"
                         }
                     ]
                 }
@@ -357,70 +353,37 @@ class TeamsService(IMService):
         return True
     
     def create_authorization_button(self, auth_url: str, button_text: str, button_description: str, request=None) -> List[Dict[str, Any]]:
-        """Create authorization button blocks for Teams."""
-        from ..api.im import get_bot_url
-        from ..config import get_config
-        
-        # Use the existing get_bot_url logic
-        config = get_config()
-        bot_url = get_bot_url(config, request)
-        
-        if bot_url and bot_url != "http://localhost:8000":
-            # Use interactive button for Teams (if Teams supports it)
-            return [
-                {
-                    "contentType": "application/vnd.microsoft.card.adaptive",
-                    "content": {
-                        "type": "AdaptiveCard",
-                        "version": "1.3",
-                        "body": [
-                            {
-                                "type": "TextBlock",
-                                "text": f"{button_description}\n\n🔒 Click the button below to authorize:",
-                                "wrap": True
-                            }
-                        ],
-                        "actions": [
-                            {
-                                "type": "Action.OpenUrl",
-                                "title": f"🔐 {button_text}",
-                                "url": auth_url
-                            }
-                        ]
-                    }
+        """Create authorization link blocks for Teams."""
+        # Always use hyperlinks for Teams as well
+        return [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "content": {
+                    "type": "AdaptiveCard",
+                    "version": "1.3",
+                    "body": [
+                        {
+                            "type": "TextBlock",
+                            "text": f"{button_description}\n\n➡️ **{button_text}**",
+                            "wrap": True
+                        },
+                        {
+                            "type": "TextBlock",
+                            "text": "💻 Click the link above to open authorization in your browser",
+                            "wrap": True,
+                            "size": "Small"
+                        }
+                    ],
+                    "actions": [
+                        {
+                            "type": "Action.OpenUrl",
+                            "title": f"🔐 {button_text}",
+                            "url": auth_url
+                        }
+                    ]
                 }
-            ]
-        else:
-            # Fallback to simple hyperlink for Teams
-            return [
-                {
-                    "contentType": "application/vnd.microsoft.card.adaptive",
-                    "content": {
-                        "type": "AdaptiveCard",
-                        "version": "1.3",
-                        "body": [
-                            {
-                                "type": "TextBlock",
-                                "text": f"{button_description}\n\n➡️ **{button_text}**",
-                                "wrap": True
-                            },
-                            {
-                                "type": "TextBlock",
-                                "text": "⚠️ **Development Mode** - Click the link above to authorize",
-                                "wrap": True,
-                                "size": "Small"
-                            }
-                        ],
-                        "actions": [
-                            {
-                                "type": "Action.OpenUrl",
-                                "title": f"🔐 {button_text}",
-                                "url": auth_url
-                            }
-                        ]
-                    }
-                }
-            ]
+            }
+        ]
     
     def get_user_dm_channel(self, user_id: str) -> str:
         """Get the DM channel ID for a specific user in Teams."""

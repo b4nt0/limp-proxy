@@ -347,8 +347,29 @@ async def handle_slack_interactivity(
                 if action.get("action_id") == "authorization_button":
                     auth_url = action.get("value")
                     if auth_url:
-                        logger.info(f"Authorization button clicked, redirecting to: {auth_url}")
-                        return RedirectResponse(url=auth_url, status_code=302)
+                        logger.info(f"Authorization button clicked, auth URL: {auth_url}")
+                        
+                        # Get the response_url from the payload to send a message back to Slack
+                        response_url = payload.get("response_url")
+                        if response_url:
+                            # Send a message with a clickable link back to Slack
+                            import requests
+                            try:
+                                response_payload = {
+                                    "text": f"🔐 **Authorization Required**\n\nClick the link below to authorize:\n\n<{auth_url}|🔐 Authorize Access>",
+                                    "replace_original": True
+                                }
+                                
+                                requests.post(response_url, json=response_payload, timeout=5)
+                                logger.info("Sent authorization link back to Slack")
+                            except Exception as e:
+                                logger.error(f"Failed to send response to Slack: {e}")
+                        
+                        # Return a simple response to Slack
+                        return {
+                            "text": f"🔐 **Authorization Required**\n\nClick the link below to authorize:\n\n<{auth_url}|🔐 Authorize Access>",
+                            "replace_original": True
+                        }
                     else:
                         logger.error("No auth URL in authorization button")
                         raise HTTPException(status_code=400, detail="No authorization URL found")

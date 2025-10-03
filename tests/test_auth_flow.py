@@ -370,18 +370,8 @@ class TestOAuth2TokenValidation:
 class TestIMServiceAuthorizationButtons:
     """Test IM service authorization button functionality."""
     
-    @patch('limp.config.get_config')
-    @patch('limp.api.im.get_bot_url')
-    def test_slack_create_authorization_button(self, mock_get_bot_url, mock_get_config):
-        """Test Slack authorization button creation."""
-        # Mock config with bot URL (for interactive button)
-        mock_config = Mock()
-        mock_config.bot.url = "https://example.com"
-        mock_get_config.return_value = mock_config
-        
-        # Mock get_bot_url to return a production URL
-        mock_get_bot_url.return_value = "https://example.com"
-        
+    def test_slack_create_authorization_button_with_production_url(self):
+        """Test Slack authorization button creation with production URL (should use button)."""
         slack_service = SlackService(
             client_id="test_client_id",
             client_secret="test_client_secret",
@@ -401,7 +391,7 @@ class TestIMServiceAuthorizationButtons:
         section_block = result[0]
         assert section_block["type"] == "section"
         assert section_block["text"]["type"] == "mrkdwn"
-        expected_text = f"{button_description}\n\n:lock: Click the button below to authorize:"
+        expected_text = f"{button_description}\n\n🔒 Click the button below to authorize:"
         assert section_block["text"]["text"] == expected_text
         
         # Check actions block
@@ -411,10 +401,39 @@ class TestIMServiceAuthorizationButtons:
         
         button = actions_block["elements"][0]
         assert button["type"] == "button"
-        assert button["text"]["text"] == f"🔐 {button_text}"  # Button text now includes emoji
-        assert button["value"] == auth_url  # URL stored in value, not url
-        assert button["action_id"] == "authorization_button"
+        assert button["text"]["text"] == f"🔐 {button_text}"
+        assert button["url"] == auth_url  # URL field for direct browser opening
         assert button["style"] == "primary"
+    
+    def test_slack_create_authorization_button_with_localhost_url(self):
+        """Test Slack authorization button creation with localhost URL (should use hyperlink)."""
+        slack_service = SlackService(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            signing_secret="test_signing_secret"
+        )
+        
+        auth_url = "http://localhost:8000/oauth/authorize"
+        button_text = "Authorize System"
+        button_description = "Click to authorize access"
+        
+        result = slack_service.create_authorization_button(auth_url, button_text, button_description, None)
+        
+        assert isinstance(result, list)
+        assert len(result) == 2  # Section + Context blocks
+        
+        # Check section block with hyperlink
+        section_block = result[0]
+        assert section_block["type"] == "section"
+        assert section_block["text"]["type"] == "mrkdwn"
+        expected_text = f"{button_description}\n\n:arrow_right: <{auth_url}|*{button_text}*>"
+        assert section_block["text"]["text"] == expected_text
+        
+        # Check context block
+        context_block = result[1]
+        assert context_block["type"] == "context"
+        assert context_block["elements"][0]["type"] == "mrkdwn"
+        assert context_block["elements"][0]["text"] == ":computer: Click the link above to open authorization in your browser"
     
     @patch('limp.config.get_config')
     @patch('limp.api.im.get_bot_url')
@@ -452,8 +471,13 @@ class TestIMServiceAuthorizationButtons:
         # Check body
         body = card["content"]["body"][0]
         assert body["type"] == "TextBlock"
-        expected_text = f"{button_description}\n\n🔒 Click the button below to authorize:"
+        expected_text = f"{button_description}\n\n➡️ **{button_text}**"
         assert body["text"] == expected_text
+        
+        # Check context text
+        context_body = card["content"]["body"][1]
+        assert context_body["type"] == "TextBlock"
+        assert context_body["text"] == "💻 Click the link above to open authorization in your browser"
         
         # Check actions
         action = card["content"]["actions"][0]

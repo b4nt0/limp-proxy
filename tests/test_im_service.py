@@ -268,18 +268,8 @@ class TestSlackService:
         assert result is False
         mock_post.assert_not_called()
     
-    @patch('limp.config.get_config')
-    @patch('limp.api.im.get_bot_url')
-    def test_create_authorization_button_with_bot_url(self, mock_get_bot_url, mock_get_config):
-        """Test creating authorization button with bot URL configured."""
-        # Mock config with bot URL
-        mock_config = Mock()
-        mock_config.bot.url = "https://example.com"
-        mock_get_config.return_value = mock_config
-        
-        # Mock get_bot_url to return a production URL
-        mock_get_bot_url.return_value = "https://example.com"
-        
+    def test_create_authorization_button_with_production_url(self):
+        """Test creating authorization button with production URL (should use button)."""
         auth_url = "https://example.com/oauth/authorize"
         button_text = "Authorize System"
         button_description = "Click to authorize access"
@@ -287,13 +277,13 @@ class TestSlackService:
         result = self.slack_service.create_authorization_button(auth_url, button_text, button_description, None)
         
         assert isinstance(result, list)
-        assert len(result) == 2  # Section + Actions
+        assert len(result) == 2  # Section + Actions blocks
         
         # Check section block
         section_block = result[0]
         assert section_block["type"] == "section"
         assert section_block["text"]["type"] == "mrkdwn"
-        expected_text = f"{button_description}\n\n:lock: Click the button below to authorize:"
+        expected_text = f"{button_description}\n\n🔒 Click the button below to authorize:"
         assert section_block["text"]["text"] == expected_text
         
         # Check actions block
@@ -303,24 +293,13 @@ class TestSlackService:
         
         button = actions_block["elements"][0]
         assert button["type"] == "button"
-        assert button["text"]["text"] == f"🔐 {button_text}"  # Button text now includes emoji
-        assert button["value"] == auth_url  # URL stored in value, not url
-        assert button["action_id"] == "authorization_button"
+        assert button["text"]["text"] == f"🔐 {button_text}"
+        assert button["url"] == auth_url  # URL field for direct browser opening
         assert button["style"] == "primary"
     
-    @patch('limp.config.get_config')
-    @patch('limp.api.im.get_bot_url')
-    def test_create_authorization_button_without_bot_url(self, mock_get_bot_url, mock_get_config):
-        """Test creating authorization button without bot URL (fallback to hyperlink)."""
-        # Mock config without bot URL
-        mock_config = Mock()
-        mock_config.bot.url = None
-        mock_get_config.return_value = mock_config
-        
-        # Mock get_bot_url to return localhost (development mode)
-        mock_get_bot_url.return_value = "http://localhost:8000"
-        
-        auth_url = "https://example.com/oauth/authorize"
+    def test_create_authorization_button_with_localhost_url(self):
+        """Test creating authorization button with localhost URL (should use hyperlink)."""
+        auth_url = "http://localhost:8000/oauth/authorize"
         button_text = "Authorize System"
         button_description = "Click to authorize access"
         
@@ -340,7 +319,8 @@ class TestSlackService:
         context_block = result[1]
         assert context_block["type"] == "context"
         assert context_block["elements"][0]["type"] == "mrkdwn"
-        assert context_block["elements"][0]["text"] == ":warning: *Development Mode* - Click the link above to authorize"
+        assert context_block["elements"][0]["text"] == ":computer: Click the link above to open authorization in your browser"
+    
     
     
     @patch('requests.post')
@@ -634,8 +614,13 @@ class TestTeamsService:
         # Check body
         body = card["content"]["body"][0]
         assert body["type"] == "TextBlock"
-        expected_text = f"{button_description}\n\n🔒 Click the button below to authorize:"
+        expected_text = f"{button_description}\n\n➡️ **{button_text}**"
         assert body["text"] == expected_text
+        
+        # Check context text
+        context_body = card["content"]["body"][1]
+        assert context_body["type"] == "TextBlock"
+        assert context_body["text"] == "💻 Click the link above to open authorization in your browser"
         
         # Check actions
         action = card["content"]["actions"][0]
