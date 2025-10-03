@@ -39,6 +39,7 @@ class OAuth2Config(BaseModel):
     token_url: str
     redirect_uri: str
     scope: Optional[str] = None
+    test_endpoint: Optional[str] = None  # Optional endpoint for token validation
 
 
 class ExternalSystemConfig(BaseModel):

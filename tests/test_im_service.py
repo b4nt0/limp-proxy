@@ -3,6 +3,7 @@ Tests for IM service functionality.
 """
 
 import pytest
+from unittest.mock import Mock, patch
 from limp.services.im import SlackService, TeamsService, IMServiceFactory
 
 
@@ -205,12 +206,160 @@ class TestSlackService:
         assert "blocks" in result
         assert result["blocks"] == metadata["blocks"]
     
-    def test_send_message(self):
-        """Test sending message (placeholder implementation)."""
-        result = self.slack_service.send_message("C123456", "Hello, world!")
+    @patch('requests.post')
+    def test_send_message_success(self, mock_post):
+        """Test sending message successfully."""
+        # Mock successful API response
+        mock_response = Mock()
+        mock_response.json.return_value = {"ok": True}
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
         
-        # Current implementation returns True as placeholder
+        slack_service = SlackService(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            signing_secret="test_signing_secret",
+            bot_token="test_bot_token"
+        )
+        
+        result = slack_service.send_message("C123456", "Hello, world!")
+        
         assert result is True
+        mock_post.assert_called_once()
+    
+    @patch('requests.post')
+    def test_send_message_with_blocks(self, mock_post):
+        """Test sending message with blocks."""
+        # Mock successful API response
+        mock_response = Mock()
+        mock_response.json.return_value = {"ok": True}
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+        
+        slack_service = SlackService(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            signing_secret="test_signing_secret",
+            bot_token="test_bot_token"
+        )
+        
+        metadata = {
+            "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": "Hello!"}}]
+        }
+        
+        result = slack_service.send_message("C123456", "Hello, world!", metadata)
+        
+        assert result is True
+        call_args = mock_post.call_args
+        assert "blocks" in call_args[1]["json"]
+    
+    @patch('requests.post')
+    def test_send_message_no_token(self, mock_post):
+        """Test sending message without bot token."""
+        slack_service = SlackService(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            signing_secret="test_signing_secret"
+            # No bot_token
+        )
+        
+        result = slack_service.send_message("C123456", "Hello, world!")
+        
+        assert result is False
+        mock_post.assert_not_called()
+    
+    def test_create_authorization_button(self):
+        """Test creating authorization button."""
+        auth_url = "https://example.com/oauth/authorize"
+        button_text = "Authorize System"
+        button_description = "Click to authorize access"
+        
+        result = self.slack_service.create_authorization_button(auth_url, button_text, button_description)
+        
+        assert isinstance(result, list)
+        assert len(result) == 2  # Section + Actions
+        
+        # Check section block
+        section_block = result[0]
+        assert section_block["type"] == "section"
+        assert section_block["text"]["type"] == "mrkdwn"
+        assert section_block["text"]["text"] == button_description
+        
+        # Check actions block
+        actions_block = result[1]
+        assert actions_block["type"] == "actions"
+        assert len(actions_block["elements"]) == 1
+        
+        button = actions_block["elements"][0]
+        assert button["type"] == "button"
+        assert button["text"]["text"] == button_text
+        assert button["url"] == auth_url
+        assert button["action_id"] == "authorization_button"
+        assert button["style"] == "primary"
+    
+    @patch('requests.post')
+    def test_get_user_dm_channel_success(self, mock_post):
+        """Test successful DM channel retrieval."""
+        # Mock successful API response
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "ok": True,
+            "channel": {"id": "D123456"}
+        }
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+        
+        slack_service = SlackService(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            signing_secret="test_signing_secret",
+            bot_token="test_bot_token"
+        )
+        
+        result = slack_service.get_user_dm_channel("U123456")
+        
+        assert result == "D123456"
+        mock_post.assert_called_once_with(
+            "https://slack.com/api/conversations.open",
+            headers={
+                "Authorization": "Bearer test_bot_token",
+                "Content-Type": "application/json"
+            },
+            json={"users": "U123456"},
+            timeout=10
+        )
+    
+    @patch('requests.post')
+    def test_get_user_dm_channel_failure(self, mock_post):
+        """Test DM channel retrieval failure."""
+        # Mock API failure
+        mock_post.side_effect = Exception("API Error")
+        
+        slack_service = SlackService(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            signing_secret="test_signing_secret",
+            bot_token="test_bot_token"
+        )
+        
+        result = slack_service.get_user_dm_channel("U123456")
+        
+        # Should fallback to user_id
+        assert result == "U123456"
+    
+    def test_get_user_dm_channel_no_token(self):
+        """Test DM channel retrieval without bot token."""
+        slack_service = SlackService(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            signing_secret="test_signing_secret"
+            # No bot_token
+        )
+        
+        result = slack_service.get_user_dm_channel("U123456")
+        
+        # Should fallback to user_id
+        assert result == "U123456"
 
     def test_parse_message_ignore_own_bot(self):
         """Test that messages from own bot are ignored to prevent infinite loops."""
@@ -408,6 +557,41 @@ class TestTeamsService:
         
         # Current implementation returns True as placeholder
         assert result is True
+    
+    def test_create_authorization_button(self):
+        """Test creating authorization button for Teams."""
+        auth_url = "https://example.com/oauth/authorize"
+        button_text = "Authorize System"
+        button_description = "Click to authorize access"
+        
+        result = self.teams_service.create_authorization_button(auth_url, button_text, button_description)
+        
+        assert isinstance(result, list)
+        assert len(result) == 1
+        
+        # Check adaptive card
+        card = result[0]
+        assert card["contentType"] == "application/vnd.microsoft.card.adaptive"
+        assert card["content"]["type"] == "AdaptiveCard"
+        assert card["content"]["version"] == "1.3"
+        
+        # Check body
+        body = card["content"]["body"][0]
+        assert body["type"] == "TextBlock"
+        assert body["text"] == button_description
+        
+        # Check actions
+        action = card["content"]["actions"][0]
+        assert action["type"] == "Action.OpenUrl"
+        assert action["title"] == button_text
+        assert action["url"] == auth_url
+    
+    def test_get_user_dm_channel(self):
+        """Test Teams DM channel retrieval."""
+        result = self.teams_service.get_user_dm_channel("U123456")
+        
+        # Teams uses user_id as DM channel
+        assert result == "U123456"
 
 
 class TestIMServiceFactory:

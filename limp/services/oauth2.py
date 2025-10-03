@@ -111,6 +111,80 @@ class OAuth2Service:
         
         return token
     
+    def validate_token(self, token: AuthToken, system_config: ExternalSystemConfig) -> bool:
+        """Validate OAuth2 token using test endpoint or introspection."""
+        if not token:
+            return False
+        
+        # If token is expired, it's invalid
+        if token.expires_at and token.expires_at <= datetime.utcnow():
+            return False
+        
+        # Try to validate using test endpoint or introspection
+        test_endpoint = system_config.oauth2.test_endpoint
+        if not test_endpoint:
+            # Use heuristic: replace last URL component with "/introspect"
+            auth_url = system_config.oauth2.authorization_url
+            if auth_url.endswith('/'):
+                auth_url = auth_url[:-1]
+            test_endpoint = '/'.join(auth_url.split('/')[:-1]) + "/introspect"
+        
+        try:
+            # Try introspection endpoint first
+            if self._validate_with_introspection(token, test_endpoint):
+                return True
+        except Exception as e:
+            logger.warning(f"Introspection validation failed: {e}")
+        
+        # Fallback: try a simple test request to base_url
+        try:
+            return self._validate_with_test_request(token, system_config.base_url)
+        except Exception as e:
+            logger.warning(f"Test request validation failed: {e}")
+            return False
+    
+    def _validate_with_introspection(self, token: AuthToken, introspection_url: str) -> bool:
+        """Validate token using OAuth2 introspection endpoint."""
+        try:
+            response = requests.post(
+                introspection_url,
+                data={
+                    "token": token.access_token,
+                    "token_type_hint": "access_token"
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=10
+            )
+            response.raise_for_status()
+            result = response.json()
+            
+            # Check if token is active
+            return result.get("active", False)
+        except Exception as e:
+            logger.error(f"Introspection request failed: {e}")
+            return False
+    
+    def _validate_with_test_request(self, token: AuthToken, base_url: str) -> bool:
+        """Validate token by making a test request to the base URL."""
+        try:
+            # Try a simple GET request to the base URL
+            headers = {
+                "Authorization": f"{token.token_type} {token.access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(
+                base_url,
+                headers=headers,
+                timeout=10
+            )
+            
+            # Consider 200-299 and 401 as valid responses (401 means token is invalid)
+            return response.status_code < 500
+        except Exception as e:
+            logger.error(f"Test request failed: {e}")
+            return False
+    
     def _exchange_code_for_token(self, code: str, auth_state: AuthState) -> Optional[Dict[str, Any]]:
         """Exchange authorization code for access token."""
         # Find system config (this would come from config in real implementation)

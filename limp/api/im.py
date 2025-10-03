@@ -27,6 +27,40 @@ async def handle_user_message(
         # Get or create user
         user = get_or_create_user(db, message_data["user_id"], platform)
         
+        # Check primary system authentication
+        config = get_config()
+        primary_system = config.get_primary_system()
+        
+        if primary_system:
+            oauth2_service = OAuth2Service(db)
+            token = oauth2_service.get_valid_token(user.id, primary_system.name)
+            
+            # If no token or token is invalid, send authorization prompt
+            if not token or not oauth2_service.validate_token(token, primary_system):
+                auth_url = oauth2_service.generate_auth_url(user.id, primary_system)
+                
+                # Send DM with authorization prompt and button
+                authorization_prompt = f"🔐 **Authorization Required**\n\nTo use this bot, you need to authorize access to {primary_system.name}.\n\nClick the button below to authorize:"
+                
+                # Create button metadata for the IM service
+                button_metadata = {
+                    "blocks": im_service.create_authorization_button(
+                        auth_url, 
+                        f"Authorize {primary_system.name}",
+                        f"Click to authorize access to {primary_system.name}"
+                    )
+                }
+                
+                # Send DM to user's private channel (not the original channel)
+                user_dm_channel = im_service.get_user_dm_channel(message_data["user_id"])
+                im_service.send_message(
+                    user_dm_channel,
+                    authorization_prompt,
+                    button_metadata
+                )
+                
+                return {"status": "ok", "action": "authorization_required"}
+        
         # Get conversation history
         conversation_history = get_conversation_history(db, user.id)
         

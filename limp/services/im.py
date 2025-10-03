@@ -3,7 +3,7 @@ Instant messaging service for Slack and Teams integration.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import logging
 import requests
 
@@ -36,6 +36,16 @@ class IMService(ABC):
     @abstractmethod
     def reply_to_message(self, channel: str, content: str, original_message_ts: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """Reply to a specific message in the IM platform."""
+        pass
+    
+    @abstractmethod
+    def create_authorization_button(self, auth_url: str, button_text: str, button_description: str) -> List[Dict[str, Any]]:
+        """Create authorization button blocks for the IM platform."""
+        pass
+    
+    @abstractmethod
+    def get_user_dm_channel(self, user_id: str) -> str:
+        """Get the DM channel ID for a specific user."""
         pass
 
 
@@ -100,10 +110,49 @@ class SlackService(IMService):
     
     def send_message(self, channel: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """Send message to Slack channel."""
-        # Implementation would use Slack Web API
-        # For now, return True as placeholder
-        logger.info(f"Sending message to Slack channel {channel}: {content}")
-        return True
+        if not self.bot_token:
+            logger.error("No bot token available for Slack message")
+            return False
+        
+        try:
+            # Prepare the message payload
+            payload = {
+                "channel": channel,
+                "text": content
+            }
+            
+            # Add blocks if provided in metadata
+            if metadata and metadata.get("blocks"):
+                payload["blocks"] = metadata["blocks"]
+            
+            # Send the message using synchronous requests
+            try:
+                response = requests.post(
+                    "https://slack.com/api/chat.postMessage",
+                    headers={
+                        "Authorization": f"Bearer {self.bot_token}",
+                        "Content-Type": "application/json"
+                    },
+                    json=payload,
+                    timeout=10
+                )
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("ok"):
+                    logger.info(f"Successfully sent message to Slack channel {channel}")
+                    return True
+                else:
+                    logger.error(f"Slack API error: {result.get('error')}")
+                    return False
+                    
+            except requests.exceptions.RequestException as e:
+                logger.error(f"HTTP error sending Slack message: {e}")
+                return False
+            
+        except Exception as e:
+            logger.error(f"Error sending Slack message: {e}")
+            return False
     
     def reply_to_message(self, channel: str, content: str, original_message_ts: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """Reply to a message in Slack - always use threads when possible."""
@@ -152,6 +201,72 @@ class SlackService(IMService):
         except Exception as e:
             logger.error(f"Error sending Slack reply: {e}")
             return False
+    
+    def create_authorization_button(self, auth_url: str, button_text: str, button_description: str) -> List[Dict[str, Any]]:
+        """Create authorization button blocks for Slack."""
+        return [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": button_description
+                }
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": button_text
+                        },
+                        "url": auth_url,
+                        "action_id": "authorization_button",
+                        "style": "primary"
+                    }
+                ]
+            }
+        ]
+    
+    def get_user_dm_channel(self, user_id: str) -> str:
+        """Get the DM channel ID for a specific user in Slack."""
+        if not self.bot_token:
+            logger.error("No bot token available for getting user DM channel")
+            return user_id  # Fallback to user_id if no token
+        
+        try:
+            # Use Slack's conversations.open API to get or create a DM channel
+            response = requests.post(
+                "https://slack.com/api/conversations.open",
+                headers={
+                    "Authorization": f"Bearer {self.bot_token}",
+                    "Content-Type": "application/json"
+                },
+                json={"users": user_id},
+                timeout=10
+            )
+            response.raise_for_status()
+            result = response.json()
+            
+            if result.get("ok"):
+                channel_id = result.get("channel", {}).get("id")
+                if channel_id:
+                    logger.info(f"Got DM channel {channel_id} for user {user_id}")
+                    return channel_id
+                else:
+                    logger.error("No channel ID in Slack response")
+                    return user_id  # Fallback
+            else:
+                logger.error(f"Slack API error getting DM channel: {result.get('error')}")
+                return user_id  # Fallback
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"HTTP error getting Slack DM channel: {e}")
+            return user_id  # Fallback
+        except Exception as e:
+            logger.error(f"Error getting Slack DM channel: {e}")
+            return user_id  # Fallback
 
 
 class TeamsService(IMService):
@@ -208,6 +323,40 @@ class TeamsService(IMService):
         # For now, return True as placeholder
         logger.info(f"Replying to Teams message {original_message_ts} in channel {channel} (as new message): {content}")
         return True
+    
+    def create_authorization_button(self, auth_url: str, button_text: str, button_description: str) -> List[Dict[str, Any]]:
+        """Create authorization button blocks for Teams."""
+        return [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "content": {
+                    "type": "AdaptiveCard",
+                    "version": "1.3",
+                    "body": [
+                        {
+                            "type": "TextBlock",
+                            "text": button_description,
+                            "wrap": True
+                        }
+                    ],
+                    "actions": [
+                        {
+                            "type": "Action.OpenUrl",
+                            "title": button_text,
+                            "url": auth_url
+                        }
+                    ]
+                }
+            }
+        ]
+    
+    def get_user_dm_channel(self, user_id: str) -> str:
+        """Get the DM channel ID for a specific user in Teams."""
+        # For Teams, the user_id is typically the conversation ID for DMs
+        # Teams handles DM channels differently than Slack
+        # The user_id should already be the DM channel ID in Teams
+        logger.info(f"Using user_id {user_id} as DM channel for Teams")
+        return user_id
 
 
 class IMServiceFactory:

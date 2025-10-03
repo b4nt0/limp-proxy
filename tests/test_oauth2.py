@@ -213,3 +213,137 @@ def test_get_valid_token_nonexistent(test_session):
     
     # Verify no token was returned
     assert token is None
+
+
+def test_validate_token_with_test_endpoint(test_session):
+    """Test token validation using configured test endpoint."""
+    # Create OAuth2 service
+    oauth2_service = OAuth2Service(test_session)
+    
+    # Mock system config with test endpoint
+    mock_system_config = Mock()
+    mock_system_config.oauth2.test_endpoint = "https://example.com/oauth/introspect"
+    mock_system_config.base_url = "https://example.com/api"
+    
+    # Mock token
+    mock_token = Mock()
+    mock_token.access_token = "test_token"
+    mock_token.token_type = "Bearer"
+    mock_token.expires_at = datetime.utcnow() + timedelta(hours=1)
+    
+    # Mock introspection response
+    with patch('requests.post') as mock_post:
+        mock_response = Mock()
+        mock_response.json.return_value = {"active": True}
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+        
+        result = oauth2_service.validate_token(mock_token, mock_system_config)
+        
+        assert result is True
+        mock_post.assert_called_once_with(
+            "https://example.com/oauth/introspect",
+            data={
+                "token": "test_token",
+                "token_type_hint": "access_token"
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10
+        )
+
+
+def test_validate_token_with_heuristic_endpoint(test_session):
+    """Test token validation using heuristic endpoint."""
+    # Create OAuth2 service
+    oauth2_service = OAuth2Service(test_session)
+    
+    # Mock system config without test endpoint
+    mock_system_config = Mock()
+    mock_system_config.oauth2.test_endpoint = None
+    mock_system_config.oauth2.authorization_url = "https://example.com/oauth/authorize"
+    mock_system_config.base_url = "https://example.com/api"
+    
+    # Mock token
+    mock_token = Mock()
+    mock_token.access_token = "test_token"
+    mock_token.token_type = "Bearer"
+    mock_token.expires_at = datetime.utcnow() + timedelta(hours=1)
+    
+    # Mock introspection response
+    with patch('requests.post') as mock_post:
+        mock_response = Mock()
+        mock_response.json.return_value = {"active": True}
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+        
+        result = oauth2_service.validate_token(mock_token, mock_system_config)
+        
+        assert result is True
+        # Should use heuristic endpoint
+        mock_post.assert_called_once_with(
+            "https://example.com/oauth/introspect",
+            data={
+                "token": "test_token",
+                "token_type_hint": "access_token"
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10
+        )
+
+
+def test_validate_token_expired(test_session):
+    """Test token validation with expired token."""
+    # Create OAuth2 service
+    oauth2_service = OAuth2Service(test_session)
+    
+    # Mock system config
+    mock_system_config = Mock()
+    mock_system_config.oauth2.test_endpoint = "https://example.com/oauth/introspect"
+    mock_system_config.base_url = "https://example.com/api"
+    
+    # Mock expired token
+    mock_token = Mock()
+    mock_token.expires_at = datetime.utcnow() - timedelta(hours=1)  # Expired
+    
+    result = oauth2_service.validate_token(mock_token, mock_system_config)
+    
+    assert result is False
+
+
+def test_validate_token_introspection_fallback(test_session):
+    """Test token validation with introspection failure and test request fallback."""
+    # Create OAuth2 service
+    oauth2_service = OAuth2Service(test_session)
+    
+    # Mock system config
+    mock_system_config = Mock()
+    mock_system_config.oauth2.test_endpoint = "https://example.com/oauth/introspect"
+    mock_system_config.base_url = "https://example.com/api"
+    
+    # Mock token
+    mock_token = Mock()
+    mock_token.access_token = "test_token"
+    mock_token.token_type = "Bearer"
+    mock_token.expires_at = datetime.utcnow() + timedelta(hours=1)
+    
+    # Mock introspection failure and test request success
+    with patch('requests.post') as mock_post, patch('requests.get') as mock_get:
+        # Introspection fails
+        mock_post.side_effect = Exception("Introspection failed")
+        
+        # Test request succeeds
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_get.return_value = mock_response
+        
+        result = oauth2_service.validate_token(mock_token, mock_system_config)
+        
+        assert result is True
+        mock_get.assert_called_once_with(
+            "https://example.com/api",
+            headers={
+                "Authorization": "Bearer test_token",
+                "Content-Type": "application/json"
+            },
+            timeout=10
+        )
