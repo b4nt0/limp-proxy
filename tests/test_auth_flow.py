@@ -370,8 +370,18 @@ class TestOAuth2TokenValidation:
 class TestIMServiceAuthorizationButtons:
     """Test IM service authorization button functionality."""
     
-    def test_slack_create_authorization_button(self):
+    @patch('limp.config.get_config')
+    @patch('limp.api.im.get_bot_url')
+    def test_slack_create_authorization_button(self, mock_get_bot_url, mock_get_config):
         """Test Slack authorization button creation."""
+        # Mock config with bot URL (for interactive button)
+        mock_config = Mock()
+        mock_config.bot.url = "https://example.com"
+        mock_get_config.return_value = mock_config
+        
+        # Mock get_bot_url to return a production URL
+        mock_get_bot_url.return_value = "https://example.com"
+        
         slack_service = SlackService(
             client_id="test_client_id",
             client_secret="test_client_secret",
@@ -382,7 +392,7 @@ class TestIMServiceAuthorizationButtons:
         button_text = "Authorize System"
         button_description = "Click to authorize access"
         
-        result = slack_service.create_authorization_button(auth_url, button_text, button_description)
+        result = slack_service.create_authorization_button(auth_url, button_text, button_description, None)
         
         assert isinstance(result, list)
         assert len(result) == 2  # Section + Actions
@@ -391,7 +401,8 @@ class TestIMServiceAuthorizationButtons:
         section_block = result[0]
         assert section_block["type"] == "section"
         assert section_block["text"]["type"] == "mrkdwn"
-        assert section_block["text"]["text"] == button_description
+        expected_text = f"{button_description}\n\n:lock: Click the button below to authorize:"
+        assert section_block["text"]["text"] == expected_text
         
         # Check actions block
         actions_block = result[1]
@@ -400,13 +411,23 @@ class TestIMServiceAuthorizationButtons:
         
         button = actions_block["elements"][0]
         assert button["type"] == "button"
-        assert button["text"]["text"] == button_text
-        assert button["url"] == auth_url
+        assert button["text"]["text"] == f"🔐 {button_text}"  # Button text now includes emoji
+        assert button["value"] == auth_url  # URL stored in value, not url
         assert button["action_id"] == "authorization_button"
         assert button["style"] == "primary"
     
-    def test_teams_create_authorization_button(self):
+    @patch('limp.config.get_config')
+    @patch('limp.api.im.get_bot_url')
+    def test_teams_create_authorization_button(self, mock_get_bot_url, mock_get_config):
         """Test Teams authorization button creation."""
+        # Mock config with bot URL (for interactive button)
+        mock_config = Mock()
+        mock_config.bot.url = "https://example.com"
+        mock_get_config.return_value = mock_config
+        
+        # Mock get_bot_url to return a production URL
+        mock_get_bot_url.return_value = "https://example.com"
+        
         teams_service = TeamsService(
             app_id="test_app_id",
             client_id="test_client_id",
@@ -417,7 +438,7 @@ class TestIMServiceAuthorizationButtons:
         button_text = "Authorize System"
         button_description = "Click to authorize access"
         
-        result = teams_service.create_authorization_button(auth_url, button_text, button_description)
+        result = teams_service.create_authorization_button(auth_url, button_text, button_description, None)
         
         assert isinstance(result, list)
         assert len(result) == 1
@@ -431,12 +452,13 @@ class TestIMServiceAuthorizationButtons:
         # Check body
         body = card["content"]["body"][0]
         assert body["type"] == "TextBlock"
-        assert body["text"] == button_description
+        expected_text = f"{button_description}\n\n🔒 Click the button below to authorize:"
+        assert body["text"] == expected_text
         
         # Check actions
         action = card["content"]["actions"][0]
         assert action["type"] == "Action.OpenUrl"
-        assert action["title"] == button_text
+        assert action["title"] == f"🔐 {button_text}"
         assert action["url"] == auth_url
     
     @patch('requests.post')

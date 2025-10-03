@@ -7,6 +7,8 @@ from typing import Dict, Any, Optional, List
 import logging
 import requests
 
+from ..config import get_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,7 +41,7 @@ class IMService(ABC):
         pass
     
     @abstractmethod
-    def create_authorization_button(self, auth_url: str, button_text: str, button_description: str) -> List[Dict[str, Any]]:
+    def create_authorization_button(self, auth_url: str, button_text: str, button_description: str, request=None) -> List[Dict[str, Any]]:
         """Create authorization button blocks for the IM platform."""
         pass
     
@@ -47,6 +49,7 @@ class IMService(ABC):
     def get_user_dm_channel(self, user_id: str) -> str:
         """Get the DM channel ID for a specific user."""
         pass
+    
 
 
 class SlackService(IMService):
@@ -202,32 +205,61 @@ class SlackService(IMService):
             logger.error(f"Error sending Slack reply: {e}")
             return False
     
-    def create_authorization_button(self, auth_url: str, button_text: str, button_description: str) -> List[Dict[str, Any]]:
+    def create_authorization_button(self, auth_url: str, button_text: str, button_description: str, request=None) -> List[Dict[str, Any]]:
         """Create authorization button blocks for Slack."""
-        return [
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": button_description
-                }
-            },
-            {
-                "type": "actions",
-                "elements": [
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": button_text
-                        },
-                        "url": auth_url,
-                        "action_id": "authorization_button",
-                        "style": "primary"
+        from ..api.im import get_bot_url
+        from ..config import get_config
+        
+        # Use the existing get_bot_url logic
+        config = get_config()
+        bot_url = get_bot_url(config, request)
+        
+        if bot_url and bot_url != "http://localhost:8000":
+            # Use button with interactivity
+            return [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"{button_description}\n\n:lock: Click the button below to authorize:"
                     }
-                ]
-            }
-        ]
+                },
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {
+                                "type": "plain_text",
+                                "text": f"🔐 {button_text}"
+                            },
+                            "action_id": "authorization_button",
+                            "style": "primary",
+                            "value": auth_url  # Store the auth URL in the button value
+                        }
+                    ]
+                }
+            ]
+        else:
+            # Fallback to hyperlink in text with better aesthetics
+            return [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"{button_description}\n\n:arrow_right: <{auth_url}|*{button_text}*>"
+                    }
+                },
+                {
+                    "type": "context",
+                    "elements": [
+                        {
+                            "type": "mrkdwn",
+                            "text": ":warning: *Development Mode* - Click the link above to authorize"
+                        }
+                    ]
+                }
+            ]
     
     def get_user_dm_channel(self, user_id: str) -> str:
         """Get the DM channel ID for a specific user in Slack."""
@@ -324,31 +356,71 @@ class TeamsService(IMService):
         logger.info(f"Replying to Teams message {original_message_ts} in channel {channel} (as new message): {content}")
         return True
     
-    def create_authorization_button(self, auth_url: str, button_text: str, button_description: str) -> List[Dict[str, Any]]:
+    def create_authorization_button(self, auth_url: str, button_text: str, button_description: str, request=None) -> List[Dict[str, Any]]:
         """Create authorization button blocks for Teams."""
-        return [
-            {
-                "contentType": "application/vnd.microsoft.card.adaptive",
-                "content": {
-                    "type": "AdaptiveCard",
-                    "version": "1.3",
-                    "body": [
-                        {
-                            "type": "TextBlock",
-                            "text": button_description,
-                            "wrap": True
-                        }
-                    ],
-                    "actions": [
-                        {
-                            "type": "Action.OpenUrl",
-                            "title": button_text,
-                            "url": auth_url
-                        }
-                    ]
+        from ..api.im import get_bot_url
+        from ..config import get_config
+        
+        # Use the existing get_bot_url logic
+        config = get_config()
+        bot_url = get_bot_url(config, request)
+        
+        if bot_url and bot_url != "http://localhost:8000":
+            # Use interactive button for Teams (if Teams supports it)
+            return [
+                {
+                    "contentType": "application/vnd.microsoft.card.adaptive",
+                    "content": {
+                        "type": "AdaptiveCard",
+                        "version": "1.3",
+                        "body": [
+                            {
+                                "type": "TextBlock",
+                                "text": f"{button_description}\n\n🔒 Click the button below to authorize:",
+                                "wrap": True
+                            }
+                        ],
+                        "actions": [
+                            {
+                                "type": "Action.OpenUrl",
+                                "title": f"🔐 {button_text}",
+                                "url": auth_url
+                            }
+                        ]
+                    }
                 }
-            }
-        ]
+            ]
+        else:
+            # Fallback to simple hyperlink for Teams
+            return [
+                {
+                    "contentType": "application/vnd.microsoft.card.adaptive",
+                    "content": {
+                        "type": "AdaptiveCard",
+                        "version": "1.3",
+                        "body": [
+                            {
+                                "type": "TextBlock",
+                                "text": f"{button_description}\n\n➡️ **{button_text}**",
+                                "wrap": True
+                            },
+                            {
+                                "type": "TextBlock",
+                                "text": "⚠️ **Development Mode** - Click the link above to authorize",
+                                "wrap": True,
+                                "size": "Small"
+                            }
+                        ],
+                        "actions": [
+                            {
+                                "type": "Action.OpenUrl",
+                                "title": f"🔐 {button_text}",
+                                "url": auth_url
+                            }
+                        ]
+                    }
+                }
+            ]
     
     def get_user_dm_channel(self, user_id: str) -> str:
         """Get the DM channel ID for a specific user in Teams."""

@@ -9,7 +9,8 @@ The /install endpoint handles the OAuth2 flow completion and stores
 installation data in the slack_organizations table.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, Form
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional
 import logging
@@ -302,4 +303,62 @@ async def handle_slack_webhook(request: Request, db: Session = Depends(get_sessi
         raise
     except Exception as e:
         logger.error(f"Slack webhook error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@slack_router.post("/interactivity")
+async def handle_slack_interactivity(
+    request: Request,
+    db: Session = Depends(get_session)
+):
+    """
+    Handle Slack interactivity (button clicks, etc.).
+    
+    This endpoint handles button interactions from Slack, particularly
+    authorization buttons that need to redirect users to OAuth2 flows.
+    
+    Args:
+        request: FastAPI request object containing the interaction payload
+        db: Database session
+        
+    Returns:
+        RedirectResponse to the OAuth2 authorization URL or error response
+    """
+    try:
+        # Parse the form data from Slack
+        form_data = await request.form()
+        payload_str = form_data.get("payload")
+        
+        if not payload_str:
+            logger.error("No payload in Slack interactivity request")
+            raise HTTPException(status_code=400, detail="No payload provided")
+        
+        # Parse the JSON payload
+        try:
+            payload = json.loads(payload_str)
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in Slack interactivity payload: {e}")
+            raise HTTPException(status_code=400, detail="Invalid payload format")
+        
+        # Check if this is an authorization button click
+        if payload.get("type") == "block_actions":
+            actions = payload.get("actions", [])
+            for action in actions:
+                if action.get("action_id") == "authorization_button":
+                    auth_url = action.get("value")
+                    if auth_url:
+                        logger.info(f"Authorization button clicked, redirecting to: {auth_url}")
+                        return RedirectResponse(url=auth_url, status_code=302)
+                    else:
+                        logger.error("No auth URL in authorization button")
+                        raise HTTPException(status_code=400, detail="No authorization URL found")
+        
+        # If not an authorization button, return a simple response
+        logger.info("Non-authorization interactivity received")
+        return {"status": "ok", "message": "Interaction received"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Slack interactivity error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")

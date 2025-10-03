@@ -51,7 +51,8 @@ async def handle_user_message(
                     "blocks": im_service.create_authorization_button(
                         auth_url, 
                         f"Authorize {primary_system.name}",
-                        f"Click to authorize access to {primary_system.name}"
+                        f"Click to authorize access to {primary_system.name}",
+                        request
                     )
                 }
                 

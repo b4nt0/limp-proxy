@@ -268,13 +268,23 @@ class TestSlackService:
         assert result is False
         mock_post.assert_not_called()
     
-    def test_create_authorization_button(self):
-        """Test creating authorization button."""
+    @patch('limp.config.get_config')
+    @patch('limp.api.im.get_bot_url')
+    def test_create_authorization_button_with_bot_url(self, mock_get_bot_url, mock_get_config):
+        """Test creating authorization button with bot URL configured."""
+        # Mock config with bot URL
+        mock_config = Mock()
+        mock_config.bot.url = "https://example.com"
+        mock_get_config.return_value = mock_config
+        
+        # Mock get_bot_url to return a production URL
+        mock_get_bot_url.return_value = "https://example.com"
+        
         auth_url = "https://example.com/oauth/authorize"
         button_text = "Authorize System"
         button_description = "Click to authorize access"
         
-        result = self.slack_service.create_authorization_button(auth_url, button_text, button_description)
+        result = self.slack_service.create_authorization_button(auth_url, button_text, button_description, None)
         
         assert isinstance(result, list)
         assert len(result) == 2  # Section + Actions
@@ -283,7 +293,8 @@ class TestSlackService:
         section_block = result[0]
         assert section_block["type"] == "section"
         assert section_block["text"]["type"] == "mrkdwn"
-        assert section_block["text"]["text"] == button_description
+        expected_text = f"{button_description}\n\n:lock: Click the button below to authorize:"
+        assert section_block["text"]["text"] == expected_text
         
         # Check actions block
         actions_block = result[1]
@@ -292,10 +303,45 @@ class TestSlackService:
         
         button = actions_block["elements"][0]
         assert button["type"] == "button"
-        assert button["text"]["text"] == button_text
-        assert button["url"] == auth_url
+        assert button["text"]["text"] == f"🔐 {button_text}"  # Button text now includes emoji
+        assert button["value"] == auth_url  # URL stored in value, not url
         assert button["action_id"] == "authorization_button"
         assert button["style"] == "primary"
+    
+    @patch('limp.config.get_config')
+    @patch('limp.api.im.get_bot_url')
+    def test_create_authorization_button_without_bot_url(self, mock_get_bot_url, mock_get_config):
+        """Test creating authorization button without bot URL (fallback to hyperlink)."""
+        # Mock config without bot URL
+        mock_config = Mock()
+        mock_config.bot.url = None
+        mock_get_config.return_value = mock_config
+        
+        # Mock get_bot_url to return localhost (development mode)
+        mock_get_bot_url.return_value = "http://localhost:8000"
+        
+        auth_url = "https://example.com/oauth/authorize"
+        button_text = "Authorize System"
+        button_description = "Click to authorize access"
+        
+        result = self.slack_service.create_authorization_button(auth_url, button_text, button_description, None)
+        
+        assert isinstance(result, list)
+        assert len(result) == 2  # Section + Context blocks
+        
+        # Check section block with hyperlink
+        section_block = result[0]
+        assert section_block["type"] == "section"
+        assert section_block["text"]["type"] == "mrkdwn"
+        expected_text = f"{button_description}\n\n:arrow_right: <{auth_url}|*{button_text}*>"
+        assert section_block["text"]["text"] == expected_text
+        
+        # Check context block
+        context_block = result[1]
+        assert context_block["type"] == "context"
+        assert context_block["elements"][0]["type"] == "mrkdwn"
+        assert context_block["elements"][0]["text"] == ":warning: *Development Mode* - Click the link above to authorize"
+    
     
     @patch('requests.post')
     def test_get_user_dm_channel_success(self, mock_post):
@@ -558,13 +604,23 @@ class TestTeamsService:
         # Current implementation returns True as placeholder
         assert result is True
     
-    def test_create_authorization_button(self):
+    @patch('limp.config.get_config')
+    @patch('limp.api.im.get_bot_url')
+    def test_create_authorization_button(self, mock_get_bot_url, mock_get_config):
         """Test creating authorization button for Teams."""
+        # Mock config with bot URL (for interactive button)
+        mock_config = Mock()
+        mock_config.bot.url = "https://example.com"
+        mock_get_config.return_value = mock_config
+        
+        # Mock get_bot_url to return a production URL
+        mock_get_bot_url.return_value = "https://example.com"
+        
         auth_url = "https://example.com/oauth/authorize"
         button_text = "Authorize System"
         button_description = "Click to authorize access"
         
-        result = self.teams_service.create_authorization_button(auth_url, button_text, button_description)
+        result = self.teams_service.create_authorization_button(auth_url, button_text, button_description, None)
         
         assert isinstance(result, list)
         assert len(result) == 1
@@ -578,12 +634,13 @@ class TestTeamsService:
         # Check body
         body = card["content"]["body"][0]
         assert body["type"] == "TextBlock"
-        assert body["text"] == button_description
+        expected_text = f"{button_description}\n\n🔒 Click the button below to authorize:"
+        assert body["text"] == expected_text
         
         # Check actions
         action = card["content"]["actions"][0]
         assert action["type"] == "Action.OpenUrl"
-        assert action["title"] == button_text
+        assert action["title"] == f"🔐 {button_text}"
         assert action["url"] == auth_url
     
     def test_get_user_dm_channel(self):
@@ -592,6 +649,7 @@ class TestTeamsService:
         
         # Teams uses user_id as DM channel
         assert result == "U123456"
+    
 
 
 class TestIMServiceFactory:
