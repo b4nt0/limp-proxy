@@ -250,9 +250,40 @@ async def send_installation_confirmation(token_data: Dict[str, Any], slack_confi
 async def handle_slack_webhook(request: Request, db: Session = Depends(get_session)):
     """Handle Slack webhook requests."""
     try:
-        # Get request data
-        request_data = await request.json()
-        logger.info(f"Received Slack request: {request_data}")
+        # Log request headers for debugging
+        logger.info(f"Received Slack webhook request with headers: {dict(request.headers)}")
+        
+        # Log request method and URL for debugging
+        logger.info(f"Request method: {request.method}, URL: {request.url}")
+        
+        # Get request data with timeout and error handling
+        try:
+            # Set a reasonable timeout for reading the request body
+            request_data = await request.json()
+            logger.info(f"Successfully parsed Slack request JSON: {request_data}")
+        except Exception as json_error:
+            logger.error(f"Failed to parse JSON from Slack request: {json_error}")
+            # Check if it's a client disconnect error
+            if "ClientDisconnect" in str(type(json_error)):
+                logger.warning("Client disconnected while reading request body")
+                return {"status": "client_disconnected"}
+            
+            # Try to get raw body for debugging
+            try:
+                body = await request.body()
+                logger.error(f"Raw request body: {body}")
+            except Exception as body_error:
+                logger.error(f"Failed to read request body: {body_error}")
+                if "ClientDisconnect" in str(type(body_error)):
+                    logger.warning("Client disconnected while reading raw body")
+                    return {"status": "client_disconnected"}
+            
+            raise HTTPException(status_code=400, detail="Invalid JSON in request body")
+        
+        # Validate request data
+        if not request_data:
+            logger.warning("Empty request data received")
+            return {"status": "empty_request"}
         
         # Create Slack service
         try:
@@ -268,11 +299,17 @@ async def handle_slack_webhook(request: Request, db: Session = Depends(get_sessi
             organization = db.query(SlackOrganization).first()
             bot_token = organization.access_token if organization else None
             
+            if not bot_token:
+                logger.error("No bot token found for Slack organization")
+                raise HTTPException(status_code=500, detail="No bot token configured")
+            
             slack_service = IMServiceFactory.create_service("slack", {
                 **slack_config.model_dump(),
                 "bot_token": bot_token
             })
-            logger.info(f"Slack service created: {slack_service}")
+            logger.info(f"Slack service created successfully")
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error creating Slack service: {e}")
             raise HTTPException(status_code=500, detail=f"Service creation error: {str(e)}")
@@ -282,10 +319,15 @@ async def handle_slack_webhook(request: Request, db: Session = Depends(get_sessi
             raise HTTPException(status_code=401, detail="Invalid request signature")
         
         # Parse message
-        message_data = slack_service.parse_message(request_data)
-        logger.info(f"Parsed message: {message_data}")
+        try:
+            message_data = slack_service.parse_message(request_data)
+            logger.info(f"Parsed message: {message_data}")
+        except Exception as parse_error:
+            logger.error(f"Failed to parse message: {parse_error}")
+            raise HTTPException(status_code=400, detail="Failed to parse message data")
         
         if message_data["type"] == "challenge":
+            logger.info("Handling Slack challenge request")
             return {"challenge": message_data["challenge"]}
         
         if message_data["type"] == "ignored":
@@ -293,6 +335,7 @@ async def handle_slack_webhook(request: Request, db: Session = Depends(get_sessi
             return {"status": "ignored"}
         
         if message_data["type"] == "message":
+            logger.info("Processing user message")
             return await handle_user_message(
                 message_data, slack_service, db, "slack", request
             )
@@ -303,7 +346,13 @@ async def handle_slack_webhook(request: Request, db: Session = Depends(get_sessi
         raise
     except Exception as e:
         logger.error(f"Slack webhook error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        # Check if it's a client disconnect error
+        if "ClientDisconnect" in str(type(e)):
+            logger.warning("Client disconnected during request processing")
+            # Return 200 to prevent Slack from retrying
+            return {"status": "client_disconnected"}
+        else:
+            raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @slack_router.post("/interactivity")
