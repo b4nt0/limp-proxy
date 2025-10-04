@@ -176,19 +176,20 @@ def test_get_valid_token(test_session):
 
 
 def test_get_valid_token_expired(test_session):
-    """Test getting expired token."""
+    """Test getting expired token without refresh token."""
     # Create user
     user = User(external_id="test_user_123", platform="slack")
     test_session.add(user)
     test_session.commit()
     test_session.refresh(user)
     
-    # Create expired token
+    # Create expired token without refresh token
     auth_token = AuthToken(
         user_id=user.id,
         system_name="test_system",
         access_token="test_access_token",
         expires_at=datetime.utcnow() - timedelta(hours=1)  # Expired
+        # No refresh_token
     )
     test_session.add(auth_token)
     test_session.commit()
@@ -199,8 +200,84 @@ def test_get_valid_token_expired(test_session):
     # Get expired token
     token = oauth2_service.get_valid_token(user.id, "test_system")
     
-    # Verify no token was returned
+    # Verify no token was returned (can't refresh without refresh token)
     assert token is None
+
+
+def test_get_valid_token_expired_with_refresh(test_session, monkeypatch):
+    """Test getting expired token with refresh token."""
+    # Create user
+    user = User(external_id="test_user_123", platform="slack")
+    test_session.add(user)
+    test_session.commit()
+    test_session.refresh(user)
+    
+    # Create expired token with refresh token
+    auth_token = AuthToken(
+        user_id=user.id,
+        system_name="test_system",
+        access_token="test_access_token",
+        refresh_token="test_refresh_token",
+        expires_at=datetime.utcnow() - timedelta(hours=1)  # Expired
+    )
+    test_session.add(auth_token)
+    test_session.commit()
+    
+    # Mock the refresh token response
+    def mock_refresh_token(token):
+        # Simulate successful refresh
+        token.access_token = "new_access_token"
+        token.expires_at = datetime.utcnow() + timedelta(hours=1)
+        return token
+    
+    # Create OAuth2 service and mock the refresh method
+    oauth2_service = OAuth2Service(test_session)
+    monkeypatch.setattr(oauth2_service, '_refresh_token', mock_refresh_token)
+    
+    # Get expired token
+    token = oauth2_service.get_valid_token(user.id, "test_system")
+    
+    # Verify token was refreshed and returned
+    assert token is not None
+    assert token.access_token == "new_access_token"
+
+
+def test_get_valid_token_nearly_expired(test_session, monkeypatch):
+    """Test getting token that is nearly expired and should be refreshed."""
+    # Create user
+    user = User(external_id="test_user_123", platform="slack")
+    test_session.add(user)
+    test_session.commit()
+    test_session.refresh(user)
+    
+    # Create token that expires in 2 minutes (should trigger refresh)
+    auth_token = AuthToken(
+        user_id=user.id,
+        system_name="test_system",
+        access_token="test_access_token",
+        refresh_token="test_refresh_token",
+        expires_at=datetime.utcnow() + timedelta(minutes=2)  # Nearly expired
+    )
+    test_session.add(auth_token)
+    test_session.commit()
+    
+    # Mock the refresh token response
+    def mock_refresh_token(token):
+        # Simulate successful refresh
+        token.access_token = "refreshed_access_token"
+        token.expires_at = datetime.utcnow() + timedelta(hours=1)
+        return token
+    
+    # Create OAuth2 service and mock the refresh method
+    oauth2_service = OAuth2Service(test_session)
+    monkeypatch.setattr(oauth2_service, '_refresh_token', mock_refresh_token)
+    
+    # Get nearly expired token
+    token = oauth2_service.get_valid_token(user.id, "test_system")
+    
+    # Verify token was refreshed and returned
+    assert token is not None
+    assert token.access_token == "refreshed_access_token"
 
 
 def test_get_valid_token_nonexistent(test_session):

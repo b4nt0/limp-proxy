@@ -98,22 +98,33 @@ class OAuth2Service:
     
     def get_valid_token(self, user_id: int, system_name: str) -> Optional[AuthToken]:
         """Get valid OAuth2 token for user and system."""
+        # Get any token for this user/system (expired or not)
         token = self.db_session.query(AuthToken).filter(
             AuthToken.user_id == user_id,
-            AuthToken.system_name == system_name,
-            AuthToken.expires_at > datetime.utcnow()
+            AuthToken.system_name == system_name
         ).first()
         
         if not token:
             return None
         
-        # Check if token needs refresh
-        if token.refresh_token and self._should_refresh_token(token):
+        now = datetime.utcnow()
+        
+        # If token is not expired, check if it needs refresh
+        if token.expires_at and token.expires_at > now:
+            if self._should_refresh_token(token):
+                refreshed_token = self._refresh_token(token)
+                if refreshed_token:
+                    return refreshed_token
+            return token
+        
+        # If token is expired, try to refresh it
+        if token.refresh_token:
             refreshed_token = self._refresh_token(token)
             if refreshed_token:
                 return refreshed_token
         
-        return token
+        # If we can't refresh, return None
+        return None
     
     def validate_token(self, token: AuthToken, system_config: ExternalSystemConfig) -> bool:
         """Validate OAuth2 token using test endpoint or introspection."""
@@ -220,14 +231,54 @@ class OAuth2Service:
     
     def _refresh_token(self, token: AuthToken) -> Optional[AuthToken]:
         """Refresh OAuth2 token."""
-        # Implementation would refresh the token using refresh_token
-        # For now, return None to indicate refresh failed
-        logger.warning("Token refresh not implemented")
-        return None
+        if not token.refresh_token:
+            logger.warning("No refresh token available")
+            return None
+        
+        # Get system configuration
+        system_config = self._get_system_config(token.system_name)
+        if not system_config:
+            logger.error(f"System configuration not found for system: {token.system_name}")
+            return None
+        
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": token.refresh_token,
+            "client_id": system_config.oauth2.client_id,
+            "client_secret": system_config.oauth2.client_secret
+        }
+        
+        try:
+            response = requests.post(
+                system_config.oauth2.token_url,
+                data=data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=10
+            )
+            response.raise_for_status()
+            token_data = response.json()
+            
+            # Update the existing token with new data
+            token.access_token = token_data["access_token"]
+            token.token_type = token_data.get("token_type", "Bearer")
+            token.expires_at = self._parse_expires_at(token_data.get("expires_in"))
+            token.scope = token_data.get("scope")
+            
+            # Update refresh token if provided
+            if "refresh_token" in token_data:
+                token.refresh_token = token_data["refresh_token"]
+            
+            self.db_session.commit()
+            logger.info(f"Successfully refreshed token for user {token.user_id} and system {token.system_name}")
+            return token
+            
+        except requests.RequestException as e:
+            logger.error(f"Failed to refresh token: {e}")
+            return None
     
     def _should_refresh_token(self, token: AuthToken) -> bool:
         """Check if token should be refreshed."""
-        if not token.expires_at:
+        if not token.expires_at or not token.refresh_token:
             return False
         
         # Refresh if expires within 5 minutes
