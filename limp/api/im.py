@@ -125,7 +125,7 @@ async def process_llm_workflow(
     try:
         # Get available tools
         system_configs = [system.model_dump() for system in get_config().external_systems]
-        tools = tools_service.get_available_tools(system_configs)
+        tools = tools_service.get_cleaned_tools_for_openai(system_configs)
         
         # Format messages with system prompts
         config = get_config()
@@ -146,7 +146,7 @@ async def process_llm_workflow(
             # Process tool calls
             for tool_call in tool_calls:
                 # Check authorization
-                system_name = get_system_name_for_tool(tool_call["function"]["name"], system_configs)
+                system_name = tools_service.get_system_name_for_tool(tool_call["function"]["name"], system_configs)
                 auth_token = oauth2_service.get_valid_token(user.id, system_name)
                 
                 if not auth_token:
@@ -338,13 +338,6 @@ def get_conversation_history(db: Session, conversation_id: int) -> list:
         })
     
     return history
-
-
-def get_system_name_for_tool(tool_name: str, system_configs: list) -> str:
-    """Get system name for tool."""
-    # Implementation would map tool to system
-    # For now, return first system
-    return system_configs[0]["name"] if system_configs else "default"
 
 
 def get_system_config(system_name: str, system_configs: list) -> dict:

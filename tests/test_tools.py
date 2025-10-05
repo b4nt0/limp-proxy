@@ -362,3 +362,136 @@ def test_get_available_tools():
         assert any(tool["function"]["name"] == "getUsers" for tool in tools)
         assert any(tool["function"]["name"] == "getProducts" for tool in tools)
         assert all("system" in tool for tool in tools)
+
+
+def test_get_cleaned_tools_for_openai():
+    """Test getting cleaned tools for OpenAI API."""
+    service = ToolsService()
+    
+    # Mock system configs
+    system_configs = [
+        {
+            "name": "system1",
+            "openapi_spec": {
+                "paths": {
+                    "/users": {
+                        "get": {
+                            "operationId": "getUsers",
+                            "description": "Get all users"
+                        }
+                    }
+                }
+            }
+        }
+    ]
+    
+    with patch.object(service, 'load_openapi_spec') as mock_load:
+        mock_load.side_effect = lambda spec: spec  # Return spec as-is
+        
+        cleaned_tools = service.get_cleaned_tools_for_openai(system_configs)
+        
+        # Verify tools are cleaned (no system field)
+        assert len(cleaned_tools) == 1
+        assert cleaned_tools[0]["type"] == "function"
+        assert cleaned_tools[0]["function"]["name"] == "getUsers"
+        assert "system" not in cleaned_tools[0]
+
+
+def test_get_system_name_for_tool():
+    """Test getting system name for a specific tool."""
+    service = ToolsService()
+    
+    # Mock system configs
+    system_configs = [
+        {
+            "name": "system1",
+            "openapi_spec": {
+                "paths": {
+                    "/users": {
+                        "get": {
+                            "operationId": "getUsers",
+                            "description": "Get all users"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "name": "system2",
+            "openapi_spec": {
+                "paths": {
+                    "/products": {
+                        "get": {
+                            "operationId": "getProducts",
+                            "description": "Get all products"
+                        }
+                    }
+                }
+            }
+        }
+    ]
+    
+    with patch.object(service, 'load_openapi_spec') as mock_load:
+        mock_load.side_effect = lambda spec: spec  # Return spec as-is
+        
+        # Test finding tool in first system
+        system_name = service.get_system_name_for_tool("getUsers", system_configs)
+        assert system_name == "system1"
+        
+        # Test finding tool in second system
+        system_name = service.get_system_name_for_tool("getProducts", system_configs)
+        assert system_name == "system2"
+        
+        # Test tool not found (fallback to first system)
+        system_name = service.get_system_name_for_tool("nonExistentTool", system_configs)
+        assert system_name == "system1"
+
+
+def test_convert_parameters_with_arrays():
+    """Test converting OpenAPI parameters with array types."""
+    service = ToolsService()
+    
+    parameters = [
+        {
+            "name": "by_resource_ids",
+            "in": "query",
+            "required": False,
+            "schema": {
+                "type": "array",
+                "items": {
+                    "type": "integer"
+                }
+            },
+            "description": "Filter by resource IDs."
+        },
+        {
+            "name": "organization_id",
+            "in": "query",
+            "required": True,
+            "schema": {
+                "type": "integer"
+            },
+            "description": "ID of the organization."
+        }
+    ]
+    
+    result = service._convert_parameters(parameters)
+    
+    # Verify the schema structure
+    assert result["type"] == "object"
+    assert "by_resource_ids" in result["properties"]
+    assert "organization_id" in result["properties"]
+    
+    # Verify array parameter has items specification
+    by_resource_ids = result["properties"]["by_resource_ids"]
+    assert by_resource_ids["type"] == "array"
+    assert "items" in by_resource_ids
+    assert by_resource_ids["items"]["type"] == "integer"
+    
+    # Verify regular parameter
+    organization_id = result["properties"]["organization_id"]
+    assert organization_id["type"] == "integer"
+    
+    # Verify required fields
+    assert "organization_id" in result["required"]
+    assert "by_resource_ids" not in result["required"]

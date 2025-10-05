@@ -142,10 +142,20 @@ class ToolsService:
             param_name = param["name"]
             param_schema = param.get("schema", {})
             
-            properties[param_name] = {
+            # Build the property schema
+            property_schema = {
                 "type": param_schema.get("type", "string"),
                 "description": param.get("description", "")
             }
+            
+            # Handle array types - add items specification
+            if param_schema.get("type") == "array":
+                items_schema = param_schema.get("items", {})
+                property_schema["items"] = {
+                    "type": items_schema.get("type", "string")
+                }
+            
+            properties[param_name] = property_schema
             
             if param.get("required", False):
                 required.append(param_name)
@@ -177,13 +187,45 @@ class ToolsService:
                 spec = self.load_openapi_spec(system_config["openapi_spec"])
                 tools = self.convert_to_openai_tools(spec)
                 
-                # Add system context to each tool
+                # Add system context to each tool for internal tracking
                 for tool in tools:
                     tool["system"] = system_config["name"]
                 
                 all_tools.extend(tools)
+
+                logger.debug(f"Loaded tools for system {system_config['name']}: {tools}")
             except Exception as e:
                 logger.error(f"Failed to load tools for system {system_config['name']}: {e}")
         
         return all_tools
+    
+    def get_cleaned_tools_for_openai(self, system_configs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Get tools cleaned for OpenAI API (without system field)."""
+        tools = self.get_available_tools(system_configs)
+        return self._clean_tools_for_openai(tools)
+    
+    def _clean_tools_for_openai(self, tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Remove system-specific fields from tools for OpenAI API."""
+        cleaned_tools = []
+        for tool in tools:
+            # Create a copy without the system field
+            cleaned_tool = {
+                "type": tool["type"],
+                "function": tool["function"]
+            }
+            cleaned_tools.append(cleaned_tool)
+        return cleaned_tools
+    
+    def get_system_name_for_tool(self, tool_name: str, system_configs: List[Dict[str, Any]]) -> str:
+        """Get system name for a specific tool."""
+        # Get all tools with system information
+        all_tools = self.get_available_tools(system_configs)
+        
+        # Find the tool and return its system
+        for tool in all_tools:
+            if tool["function"]["name"] == tool_name:
+                return tool["system"]
+        
+        # Fallback to first system if not found
+        return system_configs[0]["name"] if system_configs else "default"
 
