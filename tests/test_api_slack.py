@@ -5,6 +5,7 @@ Tests for Slack API endpoints.
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, patch
+from limp.models.conversation import Message
 
 
 def test_slack_webhook_challenge(test_client: TestClient):
@@ -359,3 +360,110 @@ def test_slack_install_no_organization_id(test_client: TestClient):
         
         assert response.status_code == 500
         assert "Internal server error" in response.json()["detail"]
+
+
+def test_slack_duplicate_message_detection(test_client: TestClient):
+    """Test that duplicate Slack messages are detected and ignored."""
+    from limp.models.slack_organization import SlackOrganization
+    from limp.models.user import User
+    from limp.models.conversation import Conversation
+    from limp.database.connection import get_session
+    
+    # Add a test SlackOrganization to the database
+    db = next(get_session())
+    try:
+        test_org = SlackOrganization(
+            organization_id="T123456",
+            access_token="xoxb-test-bot-token",
+            token_type="bot",
+            scope="chat:write,channels:read",
+            bot_user_id="U123456",
+            app_id="A123456",
+            team_id="T123456",
+            team_name="Test Team"
+        )
+        db.add(test_org)
+        
+        # Create a test user and conversation
+        user = User(external_id="U789", platform="slack")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        
+        conversation = Conversation(user_id=user.id, context={"channel": "C123"})
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+        
+        # Create a message with external_id to simulate a duplicate
+        message = Message(
+            conversation_id=conversation.id,
+            role="user",
+            content="Hello",
+            external_id="slack_T123456_U789_1234567890.123456"
+        )
+        db.add(message)
+        db.commit()
+        
+    finally:
+        db.close()
+    
+    # First message - should be processed normally
+    message_data = {
+        "type": "event_callback",
+        "team_id": "T123456",
+        "event": {
+            "type": "message",
+            "user": "U789",
+            "channel": "C123",
+            "text": "Hello",
+            "ts": "1234567890.123456"
+        }
+    }
+    
+    with patch('limp.api.slack.IMServiceFactory.create_service') as mock_factory:
+        mock_service = Mock()
+        mock_service.verify_request.return_value = True
+        mock_service.parse_message.return_value = {
+            "type": "message",
+            "user_id": "U789",
+            "channel": "C123",
+            "text": "Hello",
+            "timestamp": "1234567890.123456",
+            "team_id": "T123456"
+        }
+        mock_factory.return_value = mock_service
+        
+        # Mock the LLM service to avoid actual API calls
+        with patch('limp.api.im.process_llm_workflow') as mock_llm:
+            mock_llm.return_value = {"content": "Test response"}
+            
+            response = test_client.post("/api/slack/webhook", json=message_data)
+            assert response.status_code == 200
+            result = response.json()
+            assert result["status"] == "ok"
+            assert result["action"] == "duplicate_ignored"
+
+
+def test_generate_slack_message_id():
+    """Test Slack message ID generation."""
+    from limp.api.im import generate_slack_message_id
+    
+    message_data = {
+        "team_id": "T123456",
+        "user_id": "U789",
+        "timestamp": "1234567890.123456"
+    }
+    
+    external_id = generate_slack_message_id(message_data)
+    assert external_id == "slack_T123456_U789_1234567890.123456"
+    
+    # Test with missing fields
+    incomplete_data = {
+        "team_id": "T123456",
+        "user_id": "U789"
+        # Missing timestamp
+    }
+    
+    external_id = generate_slack_message_id(incomplete_data)
+    assert external_id == "slack_T123456_U789_unknown"

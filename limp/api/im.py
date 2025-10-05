@@ -18,6 +18,25 @@ from ..models.conversation import Conversation, Message
 logger = logging.getLogger(__name__)
 
 
+def generate_slack_message_id(message_data: Dict[str, Any]) -> str:
+    """Generate unique identifier for Slack message to prevent duplicates."""
+    # For Slack, use organization (team_id), sender (user), and timestamp
+    team_id = message_data.get("team_id", "unknown")
+    user_id = message_data.get("user_id", "unknown")
+    timestamp = message_data.get("timestamp", "unknown")
+    
+    # Create a unique identifier by concatenating these values
+    return f"slack_{team_id}_{user_id}_{timestamp}"
+
+
+def is_duplicate_message(db: Session, external_id: str) -> bool:
+    """Check if a message with the given external_id already exists."""
+    existing_message = db.query(Message).filter(
+        Message.external_id == external_id
+    ).first()
+    return existing_message is not None
+
+
 async def handle_user_message(
     message_data: Dict[str, Any],
     im_service: Any,
@@ -27,6 +46,16 @@ async def handle_user_message(
 ) -> Dict[str, Any]:
     """Handle user message and generate response."""
     try:
+        # Generate external ID for duplicate detection
+        external_id = None
+        if platform.lower() == "slack":
+            external_id = generate_slack_message_id(message_data)
+            
+            # Check for duplicate message
+            if is_duplicate_message(db, external_id):
+                logger.info(f"Duplicate message detected, ignoring: {external_id}")
+                return {"status": "ok", "action": "duplicate_ignored"}
+        
         # Get or create user
         user = get_or_create_user(db, message_data["user_id"], platform)
         
@@ -70,7 +99,7 @@ async def handle_user_message(
         
         # Get or create conversation and store user message
         conversation = get_or_create_conversation(db, user.id, message_data, platform)
-        store_user_message(db, conversation.id, message_data["text"], message_data.get("timestamp"))
+        store_user_message(db, conversation.id, message_data["text"], message_data.get("timestamp"), external_id)
         
         # Get conversation history
         conversation_history = get_conversation_history(db, conversation.id)
@@ -295,12 +324,13 @@ def should_create_new_conversation(conversation: Conversation, config, message_d
     return time_since_last_message > timedelta(hours=timeout_hours)
 
 
-def store_user_message(db: Session, conversation_id: int, content: str, timestamp: Optional[str] = None) -> Message:
+def store_user_message(db: Session, conversation_id: int, content: str, timestamp: Optional[str] = None, external_id: Optional[str] = None) -> Message:
     """Store user message in database."""
     message = Message(
         conversation_id=conversation_id,
         role="user",
         content=content,
+        external_id=external_id,
         message_metadata={"timestamp": timestamp} if timestamp else None
     )
     db.add(message)

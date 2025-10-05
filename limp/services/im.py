@@ -94,7 +94,8 @@ class SlackService(IMService):
                     "channel": event.get("channel") or request_data.get("channel"),
                     "text": event.get("text"),
                     "timestamp": event.get("ts"),
-                    "thread_ts": event.get("thread_ts")  # Thread timestamp for replies
+                    "thread_ts": event.get("thread_ts"),  # Thread timestamp for replies
+                    "team_id": request_data.get("team_id")  # Team/organization ID for duplicate detection
                 }
         
         return {"type": "unknown"}

@@ -37,6 +37,7 @@ class Message(Base):
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
     role = Column(String, nullable=False)  # 'user', 'assistant', 'system'
     content = Column(Text, nullable=False)
+    external_id = Column(String, nullable=True)  # Unique identifier from external system
     message_metadata = Column(JSON, nullable=True)  # Additional message metadata
     created_at = Column(DateTime, default=datetime.utcnow)
     

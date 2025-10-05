@@ -43,9 +43,15 @@ class TestAuthenticationFlow:
     @patch('limp.api.im.OAuth2Service')
     @patch('limp.api.im.LLMService')
     @patch('limp.api.im.ToolsService')
+    @patch('limp.api.im.is_duplicate_message')
+    @patch('limp.api.im.generate_slack_message_id')
     @pytest.mark.asyncio
-    async def test_handle_user_message_no_primary_system(self, mock_tools_service, mock_llm_service, mock_oauth2_service, mock_store_assistant_message, mock_get_conversation_history, mock_store_user_message, mock_get_or_create_conversation, mock_get_user, mock_get_config):
+    async def test_handle_user_message_no_primary_system(self, mock_generate_id, mock_is_duplicate, mock_tools_service, mock_llm_service, mock_oauth2_service, mock_store_assistant_message, mock_get_conversation_history, mock_store_user_message, mock_get_or_create_conversation, mock_get_user, mock_get_config):
         """Test message handling when no primary system is configured."""
+        # Mock duplicate detection
+        mock_is_duplicate.return_value = False
+        mock_generate_id.return_value = "test_external_id"
+        
         # Mock config with no primary system
         mock_config = Mock()
         mock_config.get_primary_system.return_value = None
@@ -108,9 +114,15 @@ class TestAuthenticationFlow:
     @patch('limp.api.im.OAuth2Service')
     @patch('limp.api.im.LLMService')
     @patch('limp.api.im.ToolsService')
+    @patch('limp.api.im.is_duplicate_message')
+    @patch('limp.api.im.generate_slack_message_id')
     @pytest.mark.asyncio
-    async def test_handle_user_message_with_system_prompts(self, mock_tools_service, mock_llm_service, mock_oauth2_service, mock_store_assistant_message, mock_get_conversation_history, mock_store_user_message, mock_get_or_create_conversation, mock_get_user, mock_get_config):
+    async def test_handle_user_message_with_system_prompts(self, mock_generate_id, mock_is_duplicate, mock_tools_service, mock_llm_service, mock_oauth2_service, mock_store_assistant_message, mock_get_conversation_history, mock_store_user_message, mock_get_or_create_conversation, mock_get_user, mock_get_config):
         """Test message handling with system prompts configured."""
+        # Mock duplicate detection
+        mock_is_duplicate.return_value = False
+        mock_generate_id.return_value = "test_external_id"
+        
         # Mock config with system prompts
         mock_config = Mock()
         mock_config.get_primary_system.return_value = None
@@ -181,9 +193,15 @@ class TestAuthenticationFlow:
     @patch('limp.api.im.OAuth2Service')
     @patch('limp.api.im.LLMService')
     @patch('limp.api.im.ToolsService')
+    @patch('limp.api.im.is_duplicate_message')
+    @patch('limp.api.im.generate_slack_message_id')
     @pytest.mark.asyncio
-    async def test_handle_user_message_valid_token(self, mock_tools_service, mock_llm_service, mock_oauth2_service, mock_store_assistant_message, mock_get_conversation_history, mock_store_user_message, mock_get_or_create_conversation, mock_get_user, mock_get_config):
+    async def test_handle_user_message_valid_token(self, mock_generate_id, mock_is_duplicate, mock_tools_service, mock_llm_service, mock_oauth2_service, mock_store_assistant_message, mock_get_conversation_history, mock_store_user_message, mock_get_or_create_conversation, mock_get_user, mock_get_config):
         """Test message handling when user has valid token."""
+        # Mock duplicate detection
+        mock_is_duplicate.return_value = False
+        mock_generate_id.return_value = "test_external_id"
+        
         # Mock config with primary system
         mock_primary_system = Mock()
         mock_primary_system.name = "test-system"
@@ -242,9 +260,15 @@ class TestAuthenticationFlow:
     @patch('limp.api.im.get_config')
     @patch('limp.api.im.get_or_create_user')
     @patch('limp.api.im.OAuth2Service')
+    @patch('limp.api.im.is_duplicate_message')
+    @patch('limp.api.im.generate_slack_message_id')
     @pytest.mark.asyncio
-    async def test_handle_user_message_no_token(self, mock_oauth2_service, mock_get_user, mock_get_config):
+    async def test_handle_user_message_no_token(self, mock_generate_id, mock_is_duplicate, mock_oauth2_service, mock_get_user, mock_get_config):
         """Test message handling when user has no token."""
+        # Mock duplicate detection
+        mock_is_duplicate.return_value = False
+        mock_generate_id.return_value = "test_external_id"
+        
         # Mock config with primary system
         mock_primary_system = Mock()
         mock_primary_system.name = "test-system"
@@ -293,9 +317,15 @@ class TestAuthenticationFlow:
     @patch('limp.api.im.get_config')
     @patch('limp.api.im.get_or_create_user')
     @patch('limp.api.im.OAuth2Service')
+    @patch('limp.api.im.is_duplicate_message')
+    @patch('limp.api.im.generate_slack_message_id')
     @pytest.mark.asyncio
-    async def test_handle_user_message_invalid_token(self, mock_oauth2_service, mock_get_user, mock_get_config):
+    async def test_handle_user_message_invalid_token(self, mock_generate_id, mock_is_duplicate, mock_oauth2_service, mock_get_user, mock_get_config):
         """Test message handling when user has invalid token."""
+        # Mock duplicate detection
+        mock_is_duplicate.return_value = False
+        mock_generate_id.return_value = "test_external_id"
+        
         # Mock config with primary system
         mock_primary_system = Mock()
         mock_primary_system.name = "test-system"
