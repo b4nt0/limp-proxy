@@ -76,6 +76,27 @@ def test_health_check(test_client: TestClient):
 
 def test_slack_webhook_challenge(test_client: TestClient):
     """Test Slack webhook challenge."""
+    from limp.models.slack_organization import SlackOrganization
+    from limp.database.connection import get_session
+    
+    # Add a test SlackOrganization to the database that the test client uses
+    db = next(get_session())
+    try:
+        test_org = SlackOrganization(
+            organization_id="T123456",
+            access_token="xoxb-test-bot-token",
+            token_type="bot",
+            scope="chat:write,channels:read",
+            bot_user_id="U123456",
+            app_id="A123456",
+            team_id="T123456",
+            team_name="Test Team"
+        )
+        db.add(test_org)
+        db.commit()
+    finally:
+        db.close()
+    
     challenge_data = {
         "type": "url_verification",
         "challenge": "test_challenge_123"
@@ -97,6 +118,27 @@ def test_slack_webhook_challenge(test_client: TestClient):
 
 def test_slack_webhook_message(test_client: TestClient):
     """Test Slack webhook message handling."""
+    from limp.models.slack_organization import SlackOrganization
+    from limp.database.connection import get_session
+    
+    # Add a test SlackOrganization to the database that the test client uses
+    db = next(get_session())
+    try:
+        test_org = SlackOrganization(
+            organization_id="T123456",
+            access_token="xoxb-test-bot-token",
+            token_type="bot",
+            scope="chat:write,channels:read",
+            bot_user_id="U123456",
+            app_id="A123456",
+            team_id="T123456",
+            team_name="Test Team"
+        )
+        db.add(test_org)
+        db.commit()
+    finally:
+        db.close()
+    
     message_data = {
         "type": "event_callback",
         "event": {
@@ -131,6 +173,27 @@ def test_slack_webhook_message(test_client: TestClient):
 
 def test_slack_webhook_ignored_message(test_client: TestClient):
     """Test Slack webhook ignores messages from own bot."""
+    from limp.models.slack_organization import SlackOrganization
+    from limp.database.connection import get_session
+    
+    # Add a test SlackOrganization to the database that the test client uses
+    db = next(get_session())
+    try:
+        test_org = SlackOrganization(
+            organization_id="T123456",
+            access_token="xoxb-test-bot-token",
+            token_type="bot",
+            scope="chat:write,channels:read",
+            bot_user_id="U123456",
+            app_id="A123456",
+            team_id="T123456",
+            team_name="Test Team"
+        )
+        db.add(test_org)
+        db.commit()
+    finally:
+        db.close()
+    
     # Message from own bot (same event.app_id as configured)
     bot_message_data = {
         "type": "event_callback",
