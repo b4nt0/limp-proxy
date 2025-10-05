@@ -170,7 +170,26 @@ async def process_llm_workflow(
         
         # Check for tool calls
         if llm_service.is_tool_call_response(response):
+            logger.info(f"Tool calls detected in response: {response}")
             tool_calls = llm_service.extract_tool_calls(response)
+            
+            # Add the assistant's response with tool calls to the messages
+            assistant_message = {
+                "role": "assistant",
+                "content": response["content"],
+                "tool_calls": [
+                    {
+                        "id": tool_call["id"],
+                        "type": tool_call["type"],
+                        "function": {
+                            "name": tool_call["function"]["name"],
+                            "arguments": tool_call["function"]["arguments"]
+                        }
+                    }
+                    for tool_call in tool_calls
+                ]
+            }
+            messages.append(assistant_message)
             
             # Process tool calls
             for tool_call in tool_calls:
@@ -195,9 +214,23 @@ async def process_llm_workflow(
                 )
                 
                 # Add tool result to conversation
+                # If tool call failed, provide a more user-friendly error message
+                if not tool_result.get("success", True):
+                    error_msg = tool_result.get("error", "Unknown error")
+                    status_code = tool_result.get("status_code")
+                    
+                    if status_code == 403:
+                        tool_result_content = f"Access denied: {error_msg}."
+                    elif status_code == 401:
+                        tool_result_content = f"Authentication failed: {error_msg}."
+                    else:
+                        tool_result_content = f"Tool call failed: {error_msg}"
+                else:
+                    tool_result_content = str(tool_result)
+                
                 messages.append({
                     "role": "tool",
-                    "content": str(tool_result),
+                    "content": tool_result_content,
                     "tool_call_id": tool_call["id"]
                 })
             

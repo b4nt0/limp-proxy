@@ -126,6 +126,8 @@ class ToolsService:
             headers = {"Content-Type": "application/json"}
             if auth_token:
                 headers["Authorization"] = f"Bearer {auth_token}"
+
+            logger.info(f"Executing tool call: {method} {url} with headers: {headers} and arguments: {arguments}")
             
             # Execute request
             if method == "GET":
@@ -140,6 +142,8 @@ class ToolsService:
                 return {"error": f"Unsupported method: {method}"}
             
             response.raise_for_status()
+
+            logger.info(f"Tool call response: {response.json()}")
             
             return {
                 "success": True,
