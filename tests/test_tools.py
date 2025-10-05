@@ -34,7 +34,8 @@ def test_load_openapi_spec_from_url():
     
     with patch('requests.get') as mock_get:
         mock_response = Mock()
-        mock_response.json.return_value = mock_spec
+        mock_response.text = json.dumps(mock_spec)
+        mock_response.headers = {'content-type': 'application/json'}
         mock_response.raise_for_status.return_value = None
         mock_get.return_value = mock_response
         

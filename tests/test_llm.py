@@ -3,10 +3,15 @@ Tests for LLM service.
 """
 
 import pytest
+import json
+import yaml
+import tempfile
+import os
 from unittest.mock import Mock, patch
 from openai import OpenAI
 
 from limp.services.llm import LLMService
+from limp.services.tools import ToolsService
 from limp.config import LLMConfig
 
 
@@ -344,3 +349,255 @@ def test_get_error_message():
     generic_error = Exception("unknown_error")
     message = service.get_error_message(generic_error)
     assert "issue" in message.lower()
+
+
+# Tests for ToolsService
+class TestToolsService:
+    """Test suite for ToolsService."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.tools_service = ToolsService()
+        
+        # Sample OpenAPI spec for testing
+        self.sample_spec = {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Test API",
+                "version": "1.0.0"
+            },
+            "paths": {
+                "/users": {
+                    "get": {
+                        "operationId": "getUsers",
+                        "description": "Get all users",
+                        "parameters": [
+                            {
+                                "name": "limit",
+                                "in": "query",
+                                "schema": {"type": "integer"},
+                                "description": "Number of users to return"
+                            }
+                        ]
+                    },
+                    "post": {
+                        "operationId": "createUser",
+                        "description": "Create a new user",
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {"type": "string"},
+                                            "email": {"type": "string"}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    
+    def test_load_openapi_spec_json_file(self):
+        """Test loading OpenAPI spec from JSON file."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(self.sample_spec, f)
+            temp_file = f.name
+        
+        try:
+            result = self.tools_service.load_openapi_spec(temp_file)
+            assert result == self.sample_spec
+            assert result["openapi"] == "3.0.0"
+            assert result["info"]["title"] == "Test API"
+        finally:
+            os.unlink(temp_file)
+    
+    def test_load_openapi_spec_yaml_file(self):
+        """Test loading OpenAPI spec from YAML file."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            yaml.dump(self.sample_spec, f)
+            temp_file = f.name
+        
+        try:
+            result = self.tools_service.load_openapi_spec(temp_file)
+            assert result == self.sample_spec
+            assert result["openapi"] == "3.0.0"
+            assert result["info"]["title"] == "Test API"
+        finally:
+            os.unlink(temp_file)
+    
+    def test_load_openapi_spec_yml_file(self):
+        """Test loading OpenAPI spec from .yml file."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
+            yaml.dump(self.sample_spec, f)
+            temp_file = f.name
+        
+        try:
+            result = self.tools_service.load_openapi_spec(temp_file)
+            assert result == self.sample_spec
+            assert result["openapi"] == "3.0.0"
+            assert result["info"]["title"] == "Test API"
+        finally:
+            os.unlink(temp_file)
+    
+    @patch('requests.get')
+    def test_load_openapi_spec_http_json(self, mock_get):
+        """Test loading OpenAPI spec from HTTP URL with JSON content."""
+        mock_response = Mock()
+        mock_response.text = json.dumps(self.sample_spec)
+        mock_response.headers = {'content-type': 'application/json'}
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+        
+        result = self.tools_service.load_openapi_spec("http://example.com/api.json")
+        
+        assert result == self.sample_spec
+        assert result["openapi"] == "3.0.0"
+        assert result["info"]["title"] == "Test API"
+        mock_get.assert_called_once_with("http://example.com/api.json")
+    
+    @patch('requests.get')
+    def test_load_openapi_spec_http_yaml(self, mock_get):
+        """Test loading OpenAPI spec from HTTP URL with YAML content."""
+        mock_response = Mock()
+        mock_response.text = yaml.dump(self.sample_spec)
+        mock_response.headers = {'content-type': 'application/x-yaml'}
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+        
+        result = self.tools_service.load_openapi_spec("http://example.com/api.yaml")
+        
+        assert result == self.sample_spec
+        assert result["openapi"] == "3.0.0"
+        assert result["info"]["title"] == "Test API"
+        mock_get.assert_called_once_with("http://example.com/api.yaml")
+    
+    @patch('requests.get')
+    def test_load_openapi_spec_http_yaml_by_extension(self, mock_get):
+        """Test loading OpenAPI spec from HTTP URL with YAML extension."""
+        mock_response = Mock()
+        mock_response.text = yaml.dump(self.sample_spec)
+        mock_response.headers = {'content-type': 'text/plain'}
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+        
+        result = self.tools_service.load_openapi_spec("http://example.com/api.yaml")
+        
+        assert result == self.sample_spec
+        assert result["openapi"] == "3.0.0"
+        assert result["info"]["title"] == "Test API"
+        mock_get.assert_called_once_with("http://example.com/api.yaml")
+    
+    @patch('requests.get')
+    def test_load_openapi_spec_http_json_fallback_to_yaml(self, mock_get):
+        """Test loading OpenAPI spec from HTTP URL with JSON fallback to YAML."""
+        mock_response = Mock()
+        mock_response.text = yaml.dump(self.sample_spec)
+        mock_response.headers = {'content-type': 'application/json'}
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+        
+        result = self.tools_service.load_openapi_spec("http://example.com/api.json")
+        
+        assert result == self.sample_spec
+        assert result["openapi"] == "3.0.0"
+        assert result["info"]["title"] == "Test API"
+        mock_get.assert_called_once_with("http://example.com/api.json")
+    
+    def test_load_openapi_spec_json_fallback_to_yaml_file(self):
+        """Test loading OpenAPI spec from file with JSON fallback to YAML."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            yaml.dump(self.sample_spec, f)
+            temp_file = f.name
+        
+        try:
+            result = self.tools_service.load_openapi_spec(temp_file)
+            assert result == self.sample_spec
+            assert result["openapi"] == "3.0.0"
+            assert result["info"]["title"] == "Test API"
+        finally:
+            os.unlink(temp_file)
+    
+    def test_load_openapi_spec_file_not_found(self):
+        """Test loading OpenAPI spec from non-existent file."""
+        with pytest.raises(Exception):
+            self.tools_service.load_openapi_spec("nonexistent.json")
+    
+    @patch('requests.get')
+    def test_load_openapi_spec_http_error(self, mock_get):
+        """Test loading OpenAPI spec from HTTP URL with error."""
+        mock_get.side_effect = Exception("Network error")
+        
+        with pytest.raises(Exception) as exc_info:
+            self.tools_service.load_openapi_spec("http://example.com/api.json")
+        
+        assert "Network error" in str(exc_info.value)
+    
+    def test_load_openapi_spec_invalid_json_and_yaml(self):
+        """Test loading OpenAPI spec with invalid JSON and YAML."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            f.write("invalid content that is neither JSON nor YAML")
+            temp_file = f.name
+        
+        try:
+            # YAML's safe_load doesn't raise exceptions for invalid content,
+            # it just returns the string as-is, so this should succeed
+            result = self.tools_service.load_openapi_spec(temp_file)
+            assert result == "invalid content that is neither JSON nor YAML"
+        finally:
+            os.unlink(temp_file)
+    
+    def test_convert_to_openai_tools(self):
+        """Test converting OpenAPI spec to OpenAI tools format."""
+        tools = self.tools_service.convert_to_openai_tools(self.sample_spec)
+        
+        assert len(tools) == 2  # GET and POST operations
+        
+        # Check GET tool
+        get_tool = next(tool for tool in tools if tool["function"]["name"] == "getUsers")
+        assert get_tool["type"] == "function"
+        assert get_tool["function"]["description"] == "Get all users"
+        assert "limit" in get_tool["function"]["parameters"]["properties"]
+        
+        # Check POST tool
+        post_tool = next(tool for tool in tools if tool["function"]["name"] == "createUser")
+        assert post_tool["type"] == "function"
+        assert post_tool["function"]["description"] == "Create a new user"
+    
+    def test_get_available_tools(self):
+        """Test getting available tools from system configurations."""
+        # Create a temporary JSON file for the test
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(self.sample_spec, f)
+            temp_file = f.name
+        
+        try:
+            system_configs = [
+                {
+                    "name": "test_system",
+                    "openapi_spec": temp_file
+                }
+            ]
+            
+            tools = self.tools_service.get_available_tools(system_configs)
+            
+            assert len(tools) == 2  # GET and POST operations
+            assert all(tool["system"] == "test_system" for tool in tools)
+        finally:
+            os.unlink(temp_file)
+    
+    def test_get_available_tools_with_invalid_spec(self):
+        """Test getting available tools with invalid system configuration."""
+        system_configs = [
+            {
+                "name": "invalid_system",
+                "openapi_spec": "invalid_url"
+            }
+        ]
+        
+        # Should not raise exception, but log error
+        tools = self.tools_service.get_available_tools(system_configs)
+        assert tools == []

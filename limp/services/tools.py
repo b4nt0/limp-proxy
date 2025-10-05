@@ -4,6 +4,7 @@ Tools service for OpenAPI integration.
 
 import requests
 import json
+import yaml
 from typing import Dict, Any, List, Optional
 import logging
 
@@ -17,15 +18,36 @@ class ToolsService:
         self.openapi_specs = {}
     
     def load_openapi_spec(self, spec_url: str) -> Dict[str, Any]:
-        """Load OpenAPI specification."""
+        """Load OpenAPI specification from JSON or YAML format."""
         try:
             if spec_url.startswith("http"):
                 response = requests.get(spec_url)
                 response.raise_for_status()
-                spec = response.json()
+                content = response.text
+                
+                # Try to determine format from content-type header or file extension
+                content_type = response.headers.get('content-type', '').lower()
+                if 'yaml' in content_type or 'yml' in content_type or spec_url.lower().endswith(('.yaml', '.yml')):
+                    spec = yaml.safe_load(content)
+                else:
+                    # Default to JSON, but try YAML if JSON fails
+                    try:
+                        spec = json.loads(content)
+                    except json.JSONDecodeError:
+                        spec = yaml.safe_load(content)
             else:
-                with open(spec_url, 'r') as f:
-                    spec = json.load(f)
+                # For local files, determine format by file extension
+                if spec_url.lower().endswith(('.yaml', '.yml')):
+                    with open(spec_url, 'r') as f:
+                        spec = yaml.safe_load(f)
+                else:
+                    # Default to JSON, but try YAML if JSON fails
+                    with open(spec_url, 'r') as f:
+                        content = f.read()
+                        try:
+                            spec = json.loads(content)
+                        except json.JSONDecodeError:
+                            spec = yaml.safe_load(content)
             
             return spec
         except Exception as e:
