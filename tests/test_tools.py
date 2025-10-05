@@ -158,7 +158,7 @@ def test_execute_tool_call_success():
     
     system_config = {
         "name": "test_system",
-        "openapi_spec": openapi_spec,
+        "openapi_spec": "https://example.com/api/openapi.json",
         "base_url": "https://example.com/api"
     }
     
@@ -176,7 +176,9 @@ def test_execute_tool_call_success():
         mock_response.raise_for_status.return_value = None
         mock_get.return_value = mock_response
         
-        result = service.execute_tool_call(tool_call, system_config, "test_token")
+        # Mock the load_openapi_spec method to return our test spec
+        with patch.object(service, 'load_openapi_spec', return_value=openapi_spec):
+            result = service.execute_tool_call(tool_call, system_config, "test_token")
         
         # Verify result
         assert result["success"] is True
@@ -209,7 +211,7 @@ def test_execute_tool_call_post():
     
     system_config = {
         "name": "test_system",
-        "openapi_spec": openapi_spec,
+        "openapi_spec": "https://example.com/api/openapi.json",
         "base_url": "https://example.com/api"
     }
     
@@ -227,7 +229,9 @@ def test_execute_tool_call_post():
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
         
-        result = service.execute_tool_call(tool_call, system_config, "test_token")
+        # Mock the load_openapi_spec method to return our test spec
+        with patch.object(service, 'load_openapi_spec', return_value=openapi_spec):
+            result = service.execute_tool_call(tool_call, system_config, "test_token")
         
         # Verify result
         assert result["success"] is True
@@ -260,7 +264,7 @@ def test_execute_tool_call_error():
     
     system_config = {
         "name": "test_system",
-        "openapi_spec": openapi_spec,
+        "openapi_spec": "https://example.com/api/openapi.json",
         "base_url": "https://example.com/api"
     }
     
@@ -274,7 +278,9 @@ def test_execute_tool_call_error():
     with patch('requests.get') as mock_get:
         mock_get.side_effect = Exception("Network error")
         
-        result = service.execute_tool_call(tool_call, system_config, "test_token")
+        # Mock the load_openapi_spec method to return our test spec
+        with patch.object(service, 'load_openapi_spec', return_value=openapi_spec):
+            result = service.execute_tool_call(tool_call, system_config, "test_token")
         
         # Verify error result
         assert result["success"] is False
@@ -299,7 +305,7 @@ def test_execute_tool_call_operation_not_found():
     
     system_config = {
         "name": "test_system",
-        "openapi_spec": openapi_spec,
+        "openapi_spec": "https://example.com/api/openapi.json",
         "base_url": "https://example.com/api"
     }
     
@@ -310,7 +316,9 @@ def test_execute_tool_call_operation_not_found():
         }
     }
     
-    result = service.execute_tool_call(tool_call, system_config, "test_token")
+    # Mock the load_openapi_spec method to return our test spec
+    with patch.object(service, 'load_openapi_spec', return_value=openapi_spec):
+        result = service.execute_tool_call(tool_call, system_config, "test_token")
     
     # Verify error result
     assert "error" in result
@@ -321,39 +329,42 @@ def test_get_available_tools():
     """Test getting available tools from system configurations."""
     service = ToolsService()
     
-    # Mock system configs
+    # Mock system configs with string URLs
     system_configs = [
         {
             "name": "system1",
-            "openapi_spec": {
-                "paths": {
-                    "/users": {
-                        "get": {
-                            "operationId": "getUsers",
-                            "description": "Get all users"
-                        }
-                    }
-                }
-            }
+            "openapi_spec": "https://example.com/api1/openapi.json"
         },
         {
             "name": "system2",
-            "openapi_spec": {
-                "paths": {
-                    "/products": {
-                        "get": {
-                            "operationId": "getProducts",
-                            "description": "Get all products"
-                        }
-                    }
-                }
-            }
+            "openapi_spec": "https://example.com/api2/openapi.json"
         }
     ]
     
-    with patch.object(service, 'load_openapi_spec') as mock_load:
-        mock_load.side_effect = lambda spec: spec  # Return spec as-is
-        mock_load.return_value = system_configs[0]["openapi_spec"]
+    # Mock specs to return
+    spec1 = {
+        "paths": {
+            "/users": {
+                "get": {
+                    "operationId": "getUsers",
+                    "description": "Get all users"
+                }
+            }
+        }
+    }
+    spec2 = {
+        "paths": {
+            "/products": {
+                "get": {
+                    "operationId": "getProducts",
+                    "description": "Get all products"
+                }
+            }
+        }
+    }
+    
+    with patch.object(service, '_get_or_load_spec') as mock_get_spec:
+        mock_get_spec.side_effect = lambda url: spec1 if "api1" in url else spec2
         
         tools = service.get_available_tools(system_configs)
         
@@ -368,26 +379,27 @@ def test_get_cleaned_tools_for_openai():
     """Test getting cleaned tools for OpenAI API."""
     service = ToolsService()
     
-    # Mock system configs
+    # Mock system configs with string URLs
     system_configs = [
         {
             "name": "system1",
-            "openapi_spec": {
-                "paths": {
-                    "/users": {
-                        "get": {
-                            "operationId": "getUsers",
-                            "description": "Get all users"
-                        }
-                    }
-                }
-            }
+            "openapi_spec": "https://example.com/api1/openapi.json"
         }
     ]
     
-    with patch.object(service, 'load_openapi_spec') as mock_load:
-        mock_load.side_effect = lambda spec: spec  # Return spec as-is
-        
+    # Mock spec to return
+    spec = {
+        "paths": {
+            "/users": {
+                "get": {
+                    "operationId": "getUsers",
+                    "description": "Get all users"
+                }
+            }
+        }
+    }
+    
+    with patch.object(service, '_get_or_load_spec', return_value=spec):
         cleaned_tools = service.get_cleaned_tools_for_openai(system_configs)
         
         # Verify tools are cleaned (no system field)
@@ -401,38 +413,42 @@ def test_get_system_name_for_tool():
     """Test getting system name for a specific tool."""
     service = ToolsService()
     
-    # Mock system configs
+    # Mock system configs with string URLs
     system_configs = [
         {
             "name": "system1",
-            "openapi_spec": {
-                "paths": {
-                    "/users": {
-                        "get": {
-                            "operationId": "getUsers",
-                            "description": "Get all users"
-                        }
-                    }
-                }
-            }
+            "openapi_spec": "https://example.com/api1/openapi.json"
         },
         {
             "name": "system2",
-            "openapi_spec": {
-                "paths": {
-                    "/products": {
-                        "get": {
-                            "operationId": "getProducts",
-                            "description": "Get all products"
-                        }
-                    }
-                }
-            }
+            "openapi_spec": "https://example.com/api2/openapi.json"
         }
     ]
     
-    with patch.object(service, 'load_openapi_spec') as mock_load:
-        mock_load.side_effect = lambda spec: spec  # Return spec as-is
+    # Mock specs to return
+    spec1 = {
+        "paths": {
+            "/users": {
+                "get": {
+                    "operationId": "getUsers",
+                    "description": "Get all users"
+                }
+            }
+        }
+    }
+    spec2 = {
+        "paths": {
+            "/products": {
+                "get": {
+                    "operationId": "getProducts",
+                    "description": "Get all products"
+                }
+            }
+        }
+    }
+    
+    with patch.object(service, '_get_or_load_spec') as mock_get_spec:
+        mock_get_spec.side_effect = lambda url: spec1 if "api1" in url else spec2
         
         # Test finding tool in first system
         system_name = service.get_system_name_for_tool("getUsers", system_configs)

@@ -15,7 +15,7 @@ class ToolsService:
     """Tools service for OpenAPI integration."""
     
     def __init__(self):
-        self.openapi_specs = {}
+        self.openapi_specs = {}  # Cache for loaded OpenAPI specs
     
     def load_openapi_spec(self, spec_url: str) -> Dict[str, Any]:
         """Load OpenAPI specification from JSON or YAML format."""
@@ -53,6 +53,12 @@ class ToolsService:
         except Exception as e:
             logger.error(f"Failed to load OpenAPI spec from {spec_url}: {e}")
             raise
+    
+    def _get_or_load_spec(self, spec_url: str) -> Dict[str, Any]:
+        """Get cached OpenAPI spec or load it if not cached."""
+        if spec_url not in self.openapi_specs:
+            self.openapi_specs[spec_url] = self.load_openapi_spec(spec_url)
+        return self.openapi_specs[spec_url]
     
     def convert_to_openai_tools(self, openapi_spec: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Convert OpenAPI spec to OpenAI tools format."""
@@ -105,8 +111,11 @@ class ToolsService:
             # Parse tool call arguments
             arguments = json.loads(tool_call["function"]["arguments"])
             
+            # Get cached OpenAPI spec (should already be loaded)
+            openapi_spec = self._get_or_load_spec(system_config["openapi_spec"])
+            
             # Find the operation in OpenAPI spec
-            operation = self._find_operation(system_config["openapi_spec"], tool_call["function"]["name"])
+            operation = self._find_operation(openapi_spec, tool_call["function"]["name"])
             if not operation:
                 return {"error": f"Operation {tool_call['function']['name']} not found"}
             
@@ -240,7 +249,8 @@ class ToolsService:
         
         for system_config in system_configs:
             try:
-                spec = self.load_openapi_spec(system_config["openapi_spec"])
+                # Load and cache the spec
+                spec = self._get_or_load_spec(system_config["openapi_spec"])
                 tools = self.convert_to_openai_tools(spec)
                 
                 # Add system context to each tool for internal tracking
