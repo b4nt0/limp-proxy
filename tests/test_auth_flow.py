@@ -36,11 +36,15 @@ class TestAuthenticationFlow:
     
     @patch('limp.api.im.get_config')
     @patch('limp.api.im.get_or_create_user')
+    @patch('limp.api.im.get_or_create_conversation')
+    @patch('limp.api.im.store_user_message')
+    @patch('limp.api.im.get_conversation_history')
+    @patch('limp.api.im.store_assistant_message')
     @patch('limp.api.im.OAuth2Service')
     @patch('limp.api.im.LLMService')
     @patch('limp.api.im.ToolsService')
     @pytest.mark.asyncio
-    async def test_handle_user_message_no_primary_system(self, mock_tools_service, mock_llm_service, mock_oauth2_service, mock_get_user, mock_get_config):
+    async def test_handle_user_message_no_primary_system(self, mock_tools_service, mock_llm_service, mock_oauth2_service, mock_store_assistant_message, mock_get_conversation_history, mock_store_user_message, mock_get_or_create_conversation, mock_get_user, mock_get_config):
         """Test message handling when no primary system is configured."""
         # Mock config with no primary system
         mock_config = Mock()
@@ -51,6 +55,14 @@ class TestAuthenticationFlow:
         
         # Mock user creation
         mock_get_user.return_value = self.mock_user
+        
+        # Mock conversation management
+        mock_conversation = Mock()
+        mock_conversation.id = 1
+        mock_get_or_create_conversation.return_value = mock_conversation
+        mock_get_conversation_history.return_value = []
+        mock_store_user_message.return_value = Mock()
+        mock_store_assistant_message.return_value = Mock()
         
         # Mock services
         mock_llm_instance = Mock()
@@ -81,11 +93,15 @@ class TestAuthenticationFlow:
     
     @patch('limp.api.im.get_config')
     @patch('limp.api.im.get_or_create_user')
+    @patch('limp.api.im.get_or_create_conversation')
+    @patch('limp.api.im.store_user_message')
+    @patch('limp.api.im.get_conversation_history')
+    @patch('limp.api.im.store_assistant_message')
     @patch('limp.api.im.OAuth2Service')
     @patch('limp.api.im.LLMService')
     @patch('limp.api.im.ToolsService')
     @pytest.mark.asyncio
-    async def test_handle_user_message_valid_token(self, mock_tools_service, mock_llm_service, mock_oauth2_service, mock_get_user, mock_get_config):
+    async def test_handle_user_message_valid_token(self, mock_tools_service, mock_llm_service, mock_oauth2_service, mock_store_assistant_message, mock_get_conversation_history, mock_store_user_message, mock_get_or_create_conversation, mock_get_user, mock_get_config):
         """Test message handling when user has valid token."""
         # Mock config with primary system
         mock_primary_system = Mock()
@@ -98,6 +114,14 @@ class TestAuthenticationFlow:
         
         # Mock user creation
         mock_get_user.return_value = self.mock_user
+        
+        # Mock conversation management
+        mock_conversation = Mock()
+        mock_conversation.id = 1
+        mock_get_or_create_conversation.return_value = mock_conversation
+        mock_get_conversation_history.return_value = []
+        mock_store_user_message.return_value = Mock()
+        mock_store_assistant_message.return_value = Mock()
         
         # Mock OAuth2 service with valid token
         mock_oauth2_instance = Mock()

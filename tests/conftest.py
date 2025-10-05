@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from limp.database import init_database
 from limp.models.base import Base
+from limp.models.slack_organization import SlackOrganization  # Import to ensure table is created
 from limp.config import Config, DatabaseConfig, LLMConfig
 from limp.api.main import create_app
 

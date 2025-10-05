@@ -39,6 +39,7 @@ im_platforms:
     app_id: "your-teams-app-id"
     client_id: "your-teams-client-id"
     client_secret: "your-teams-client-secret"
+    conversation_timeout_hours: 8
 
 admin:
   enabled: true

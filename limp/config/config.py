@@ -58,6 +58,8 @@ class IMPlatformConfig(BaseModel):
     client_secret: str
     signing_secret: Optional[str] = None
     verification_token: Optional[str] = None
+    # Teams-specific conversation settings
+    conversation_timeout_hours: Optional[int] = Field(default=8, description="Hours after which a new conversation starts in Teams DMs")
 
 
 class AdminConfig(BaseModel):

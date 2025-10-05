@@ -3,8 +3,9 @@ Common instant messaging functionality.
 """
 
 from sqlalchemy.orm import Session
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
+from datetime import datetime, timedelta
 
 from ..database import get_session
 from ..services.oauth2 import OAuth2Service
@@ -12,6 +13,7 @@ from ..services.llm import LLMService
 from ..services.tools import ToolsService
 from ..config import get_config
 from ..models.user import User
+from ..models.conversation import Conversation, Message
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +68,12 @@ async def handle_user_message(
                 
                 return {"status": "ok", "action": "authorization_required"}
         
+        # Get or create conversation and store user message
+        conversation = get_or_create_conversation(db, user.id, message_data, platform)
+        store_user_message(db, conversation.id, message_data["text"], message_data.get("timestamp"))
+        
         # Get conversation history
-        conversation_history = get_conversation_history(db, user.id)
+        conversation_history = get_conversation_history(db, conversation.id)
         
         # Create services
         oauth2_service = OAuth2Service(db)
@@ -85,6 +91,9 @@ async def handle_user_message(
             db,
             bot_url
         )
+        
+        # Store assistant response
+        store_assistant_message(db, conversation.id, response["content"], response.get("metadata"))
         
         # Send response - always use reply_to_message
         # The specific implementation (thread vs new message) is handled by each platform
@@ -190,11 +199,142 @@ def get_or_create_user(db: Session, external_id: str, platform: str) -> User:
     return user
 
 
-def get_conversation_history(db: Session, user_id: int) -> list:
-    """Get conversation history for user."""
-    # Implementation would get recent messages from database
-    # For now, return empty list
-    return []
+def get_or_create_conversation(db: Session, user_id: int, message_data: Dict[str, Any], platform: str) -> Conversation:
+    """Get or create conversation for user based on platform rules."""
+    config = get_config()
+    
+    if platform.lower() == "slack":
+        # For Slack, use thread_ts to determine conversation
+        thread_ts = message_data.get("thread_ts")
+        if thread_ts:
+            # This is a reply in a thread - find existing conversation
+            # Query all conversations for this user and check JSON manually
+            conversations = db.query(Conversation).filter(
+                Conversation.user_id == user_id
+            ).all()
+            
+            for conv in conversations:
+                if conv.context and conv.context.get("thread_ts") == thread_ts:
+                    return conv
+        
+        # Create new conversation for Slack
+        context = {
+            "thread_ts": message_data.get("timestamp"),  # Use message timestamp as thread root
+            "channel": message_data.get("channel")
+        }
+        conversation = Conversation(
+            user_id=user_id,
+            context=context
+        )
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+        return conversation
+    
+    elif platform.lower() == "teams":
+        # For Teams, check if we need a new conversation based on timeout
+        # Get the most recent conversation for this user
+        recent_conversation = db.query(Conversation).filter(
+            Conversation.user_id == user_id
+        ).order_by(Conversation.created_at.desc()).first()
+        
+        # Check for /new command
+        text = message_data.get("text", "").strip()
+        if text == "/new":
+            # Force new conversation
+            recent_conversation = None
+        
+        # Check timeout for Teams DMs (not channels)
+        if recent_conversation and should_create_new_conversation(recent_conversation, config, message_data):
+            recent_conversation = None
+        
+        if recent_conversation:
+            return recent_conversation
+        
+        # Create new conversation for Teams
+        context = {
+            "channel": message_data.get("channel"),
+            "conversation_type": "dm" if message_data.get("channel", "").startswith("19:") else "channel"
+        }
+        conversation = Conversation(
+            user_id=user_id,
+            context=context
+        )
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+        return conversation
+    
+    else:
+        # Default behavior - create new conversation
+        conversation = Conversation(user_id=user_id)
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+        return conversation
+
+
+def should_create_new_conversation(conversation: Conversation, config, message_data: Dict[str, Any]) -> bool:
+    """Check if a new conversation should be created based on timeout rules."""
+    # Only apply timeout rules to Teams DMs
+    if not conversation.context or conversation.context.get("conversation_type") != "dm":
+        return False
+    
+    # Get Teams platform config
+    try:
+        teams_config = config.get_im_platform_by_key("teams")
+        timeout_hours = teams_config.conversation_timeout_hours or 8
+    except ValueError:
+        timeout_hours = 8  # Default fallback
+    
+    # Check if enough time has passed
+    time_since_last_message = datetime.utcnow() - conversation.updated_at
+    return time_since_last_message > timedelta(hours=timeout_hours)
+
+
+def store_user_message(db: Session, conversation_id: int, content: str, timestamp: Optional[str] = None) -> Message:
+    """Store user message in database."""
+    message = Message(
+        conversation_id=conversation_id,
+        role="user",
+        content=content,
+        message_metadata={"timestamp": timestamp} if timestamp else None
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    return message
+
+
+def store_assistant_message(db: Session, conversation_id: int, content: str, metadata: Optional[Dict[str, Any]] = None) -> Message:
+    """Store assistant message in database."""
+    message = Message(
+        conversation_id=conversation_id,
+        role="assistant",
+        content=content,
+        message_metadata=metadata
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    return message
+
+
+def get_conversation_history(db: Session, conversation_id: int) -> list:
+    """Get conversation history for a specific conversation."""
+    messages = db.query(Message).filter(
+        Message.conversation_id == conversation_id
+    ).order_by(Message.created_at.asc()).all()
+    
+    # Format messages for LLM
+    history = []
+    for message in messages:
+        history.append({
+            "role": message.role,
+            "content": message.content
+        })
+    
+    return history
 
 
 def get_system_name_for_tool(tool_name: str, system_configs: list) -> str:
