@@ -127,10 +127,13 @@ async def process_llm_workflow(
         system_configs = [system.model_dump() for system in get_config().external_systems]
         tools = tools_service.get_available_tools(system_configs)
         
-        # Format messages
+        # Format messages with system prompts
+        config = get_config()
+        system_prompts = config.bot.system_prompts if config.bot.system_prompts else []
         messages = llm_service.format_messages_with_context(
             user_message,
-            conversation_history
+            conversation_history,
+            system_prompts
         )
         
         # Send to LLM

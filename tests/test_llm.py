@@ -137,12 +137,12 @@ def test_format_messages_with_context():
         {"role": "user", "content": "Hi"},
         {"role": "assistant", "content": "Hello! How can I help you?"}
     ]
-    system_prompt = "You are a helpful assistant."
+    system_prompts = ["You are a helpful assistant."]
     
     messages = service.format_messages_with_context(
         user_message,
         conversation_history,
-        system_prompt
+        system_prompts
     )
     
     # Verify message structure
@@ -174,6 +174,99 @@ def test_format_messages_without_system_prompt():
     )
     
     # Verify message structure
+    assert len(messages) == 3
+    assert messages[0]["role"] == "user"
+    assert messages[0]["content"] == "Hi"
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["content"] == "Hello! How can I help you?"
+    assert messages[2]["role"] == "user"
+    assert messages[2]["content"] == "Hello, how are you?"
+
+
+def test_format_messages_with_multiple_system_prompts():
+    """Test formatting messages with multiple system prompts."""
+    config = LLMConfig(api_key="test-key")
+    service = LLMService(config)
+    
+    user_message = "Hello, how are you?"
+    conversation_history = [
+        {"role": "user", "content": "Hi"},
+        {"role": "assistant", "content": "Hello! How can I help you?"}
+    ]
+    system_prompts = [
+        "You are a helpful AI assistant.",
+        "Always be polite and professional.",
+        "If you need to access external systems, ask the user to authorize access first."
+    ]
+    
+    messages = service.format_messages_with_context(
+        user_message,
+        conversation_history,
+        system_prompts
+    )
+    
+    # Verify message structure
+    assert len(messages) == 6  # 3 system prompts + 2 history + 1 current
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"] == "You are a helpful AI assistant."
+    assert messages[1]["role"] == "system"
+    assert messages[1]["content"] == "Always be polite and professional."
+    assert messages[2]["role"] == "system"
+    assert messages[2]["content"] == "If you need to access external systems, ask the user to authorize access first."
+    assert messages[3]["role"] == "user"
+    assert messages[3]["content"] == "Hi"
+    assert messages[4]["role"] == "assistant"
+    assert messages[4]["content"] == "Hello! How can I help you?"
+    assert messages[5]["role"] == "user"
+    assert messages[5]["content"] == "Hello, how are you?"
+
+
+def test_format_messages_with_empty_system_prompts():
+    """Test formatting messages with empty system prompts list."""
+    config = LLMConfig(api_key="test-key")
+    service = LLMService(config)
+    
+    user_message = "Hello, how are you?"
+    conversation_history = [
+        {"role": "user", "content": "Hi"},
+        {"role": "assistant", "content": "Hello! How can I help you?"}
+    ]
+    system_prompts = []
+    
+    messages = service.format_messages_with_context(
+        user_message,
+        conversation_history,
+        system_prompts
+    )
+    
+    # Verify message structure (should be same as no system prompts)
+    assert len(messages) == 3
+    assert messages[0]["role"] == "user"
+    assert messages[0]["content"] == "Hi"
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["content"] == "Hello! How can I help you?"
+    assert messages[2]["role"] == "user"
+    assert messages[2]["content"] == "Hello, how are you?"
+
+
+def test_format_messages_with_none_system_prompts():
+    """Test formatting messages with None system prompts."""
+    config = LLMConfig(api_key="test-key")
+    service = LLMService(config)
+    
+    user_message = "Hello, how are you?"
+    conversation_history = [
+        {"role": "user", "content": "Hi"},
+        {"role": "assistant", "content": "Hello! How can I help you?"}
+    ]
+    
+    messages = service.format_messages_with_context(
+        user_message,
+        conversation_history,
+        None
+    )
+    
+    # Verify message structure (should be same as no system prompts)
     assert len(messages) == 3
     assert messages[0]["role"] == "user"
     assert messages[0]["content"] == "Hi"

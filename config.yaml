@@ -3,6 +3,10 @@
 bot:
   name: "LIMP"
   url: ""
+  system_prompts:
+    - "You are a helpful AI assistant that can help users interact with external systems."
+    - "Always be polite and professional in your responses."
+    - "If you need to access external systems, ask the user to authorize access first."
 
 database:
   url: "sqlite:///./limp.db"

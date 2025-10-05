@@ -61,13 +61,14 @@ class LLMService:
         self,
         user_message: str,
         conversation_history: List[Dict[str, str]],
-        system_prompt: Optional[str] = None
+        system_prompts: Optional[List[str]] = None
     ) -> List[Dict[str, str]]:
         """Format messages with conversation context."""
         messages = []
         
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
+        if system_prompts:
+            for system_prompt in system_prompts:
+                messages.append({"role": "system", "content": system_prompt})
         
         # Add conversation history
         messages.extend(conversation_history)

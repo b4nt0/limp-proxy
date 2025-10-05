@@ -51,6 +51,7 @@ class TestAuthenticationFlow:
         mock_config.get_primary_system.return_value = None
         mock_config.llm = Mock()
         mock_config.external_systems = []
+        mock_config.bot.system_prompts = []  # Mock bot config with empty system prompts
         mock_get_config.return_value = mock_config
         
         # Mock user creation
@@ -90,6 +91,86 @@ class TestAuthenticationFlow:
         assert "action" not in result
         mock_get_user.assert_called_once()
         self.mock_im_service.reply_to_message.assert_called_once()
+        
+        # Verify that format_messages_with_context was called with system prompts
+        mock_llm_instance.format_messages_with_context.assert_called_once()
+        call_args = mock_llm_instance.format_messages_with_context.call_args
+        assert call_args[0][0] == "Hello, bot!"  # user_message
+        assert call_args[0][1] == []  # conversation_history
+        assert call_args[0][2] == []  # system_prompts (empty because no primary system)
+    
+    @patch('limp.api.im.get_config')
+    @patch('limp.api.im.get_or_create_user')
+    @patch('limp.api.im.get_or_create_conversation')
+    @patch('limp.api.im.store_user_message')
+    @patch('limp.api.im.get_conversation_history')
+    @patch('limp.api.im.store_assistant_message')
+    @patch('limp.api.im.OAuth2Service')
+    @patch('limp.api.im.LLMService')
+    @patch('limp.api.im.ToolsService')
+    @pytest.mark.asyncio
+    async def test_handle_user_message_with_system_prompts(self, mock_tools_service, mock_llm_service, mock_oauth2_service, mock_store_assistant_message, mock_get_conversation_history, mock_store_user_message, mock_get_or_create_conversation, mock_get_user, mock_get_config):
+        """Test message handling with system prompts configured."""
+        # Mock config with system prompts
+        mock_config = Mock()
+        mock_config.get_primary_system.return_value = None
+        mock_config.llm = Mock()
+        mock_config.external_systems = []
+        mock_config.bot.system_prompts = [
+            "You are a helpful AI assistant.",
+            "Always be polite and professional.",
+            "If you need to access external systems, ask the user to authorize access first."
+        ]
+        mock_get_config.return_value = mock_config
+        
+        # Mock user creation
+        mock_get_user.return_value = self.mock_user
+        
+        # Mock conversation management
+        mock_conversation = Mock()
+        mock_conversation.id = 1
+        mock_get_or_create_conversation.return_value = mock_conversation
+        mock_get_conversation_history.return_value = []
+        mock_store_user_message.return_value = Mock()
+        mock_store_assistant_message.return_value = Mock()
+        
+        # Mock services
+        mock_llm_instance = Mock()
+        mock_llm_instance.chat_completion.return_value = {"content": "Test response"}
+        mock_llm_instance.is_tool_call_response.return_value = False
+        mock_llm_service.return_value = mock_llm_instance
+        
+        mock_tools_instance = Mock()
+        mock_tools_instance.get_available_tools.return_value = []
+        mock_tools_service.return_value = mock_tools_instance
+        
+        # Mock IM service
+        self.mock_im_service.reply_to_message.return_value = True
+        
+        # Call the function
+        result = await handle_user_message(
+            self.message_data,
+            self.mock_im_service,
+            self.mock_db_session,
+            "slack"
+        )
+        
+        # Verify that normal processing continues
+        assert result["status"] == "ok"
+        assert "action" not in result
+        mock_get_user.assert_called_once()
+        self.mock_im_service.reply_to_message.assert_called_once()
+        
+        # Verify that format_messages_with_context was called with system prompts
+        mock_llm_instance.format_messages_with_context.assert_called_once()
+        call_args = mock_llm_instance.format_messages_with_context.call_args
+        assert call_args[0][0] == "Hello, bot!"  # user_message
+        assert call_args[0][1] == []  # conversation_history
+        assert call_args[0][2] == [  # system_prompts
+            "You are a helpful AI assistant.",
+            "Always be polite and professional.",
+            "If you need to access external systems, ask the user to authorize access first."
+        ]
     
     @patch('limp.api.im.get_config')
     @patch('limp.api.im.get_or_create_user')

@@ -415,3 +415,128 @@ def test_load_config_no_primary_system():
     finally:
         Path(config_path).unlink()
 
+
+def test_bot_config_with_system_prompts():
+    """Test bot configuration with system prompts."""
+    from limp.config import BotConfig
+    
+    # Test with system prompts
+    bot_config = BotConfig(
+        name="Test Bot",
+        url="https://example.com",
+        system_prompts=[
+            "You are a helpful AI assistant.",
+            "Always be polite and professional.",
+            "If you need to access external systems, ask the user to authorize access first."
+        ]
+    )
+    
+    assert bot_config.name == "Test Bot"
+    assert bot_config.url == "https://example.com"
+    assert len(bot_config.system_prompts) == 3
+    assert bot_config.system_prompts[0] == "You are a helpful AI assistant."
+    assert bot_config.system_prompts[1] == "Always be polite and professional."
+    assert bot_config.system_prompts[2] == "If you need to access external systems, ask the user to authorize access first."
+
+
+def test_bot_config_without_system_prompts():
+    """Test bot configuration without system prompts (should default to empty list)."""
+    from limp.config import BotConfig
+    
+    # Test without system prompts (should default to empty list)
+    bot_config = BotConfig(
+        name="Test Bot",
+        url="https://example.com"
+    )
+    
+    assert bot_config.name == "Test Bot"
+    assert bot_config.url == "https://example.com"
+    assert bot_config.system_prompts == []
+
+
+def test_load_config_with_system_prompts():
+    """Test loading config with system prompts."""
+    config_data = {
+        "llm": {
+            "api_key": "test-key"
+        },
+        "bot": {
+            "name": "Test Bot",
+            "url": "https://example.com",
+            "system_prompts": [
+                "You are a helpful AI assistant.",
+                "Always be polite and professional.",
+                "If you need to access external systems, ask the user to authorize access first."
+            ]
+        }
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config_data, f)
+        config_path = f.name
+    
+    try:
+        config = load_config(config_path)
+        assert config is not None
+        assert config.bot.name == "Test Bot"
+        assert config.bot.url == "https://example.com"
+        assert len(config.bot.system_prompts) == 3
+        assert config.bot.system_prompts[0] == "You are a helpful AI assistant."
+        assert config.bot.system_prompts[1] == "Always be polite and professional."
+        assert config.bot.system_prompts[2] == "If you need to access external systems, ask the user to authorize access first."
+    finally:
+        Path(config_path).unlink()
+
+
+def test_load_config_without_system_prompts():
+    """Test loading config without system prompts (should default to empty list)."""
+    config_data = {
+        "llm": {
+            "api_key": "test-key"
+        },
+        "bot": {
+            "name": "Test Bot",
+            "url": "https://example.com"
+        }
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config_data, f)
+        config_path = f.name
+    
+    try:
+        config = load_config(config_path)
+        assert config is not None
+        assert config.bot.name == "Test Bot"
+        assert config.bot.url == "https://example.com"
+        assert config.bot.system_prompts == []
+    finally:
+        Path(config_path).unlink()
+
+
+def test_load_config_with_empty_system_prompts():
+    """Test loading config with empty system prompts list."""
+    config_data = {
+        "llm": {
+            "api_key": "test-key"
+        },
+        "bot": {
+            "name": "Test Bot",
+            "url": "https://example.com",
+            "system_prompts": []
+        }
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config_data, f)
+        config_path = f.name
+    
+    try:
+        config = load_config(config_path)
+        assert config is not None
+        assert config.bot.name == "Test Bot"
+        assert config.bot.url == "https://example.com"
+        assert config.bot.system_prompts == []
+    finally:
+        Path(config_path).unlink()
+
