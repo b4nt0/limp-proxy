@@ -68,13 +68,13 @@ async def get_configuration(
             "provider": config.llm.provider,
             "model": config.llm.model,
             "max_tokens": config.llm.max_tokens,
-            "temperature": config.llm.temperature
+            "temperature": config.llm.temperature,
+            "max_iterations": config.llm.max_iterations
         },
         "external_systems": [system.dict() for system in config.external_systems],
         "im_platforms": [platform.dict() for platform in config.im_platforms],
         "admin": config.admin.dict(),
-        "alerts": config.alerts.dict(),
-        "max_iterations": config.max_iterations
+        "alerts": config.alerts.dict()
     }
 
 

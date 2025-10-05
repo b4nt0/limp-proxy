@@ -150,7 +150,7 @@ async def process_llm_workflow(
     db: Session,
     bot_url: str
 ) -> Dict[str, Any]:
-    """Process message through LLM workflow."""
+    """Process message through LLM workflow with iterative tool calling."""
     try:
         # Get available tools
         system_configs = [system.model_dump() for system in get_config().external_systems]
@@ -165,80 +165,96 @@ async def process_llm_workflow(
             system_prompts
         )
         
-        # Send to LLM
-        response = llm_service.chat_completion(messages, tools)
+        # Get max iterations from config
+        max_iterations = config.llm.max_iterations
+        iteration = 0
         
-        # Check for tool calls
-        if llm_service.is_tool_call_response(response):
-            logger.info(f"Tool calls detected in response: {response}")
-            tool_calls = llm_service.extract_tool_calls(response)
+        # Iterative tool calling loop
+        while iteration < max_iterations:
+            # Send to LLM
+            response = llm_service.chat_completion(messages, tools)
             
-            # Add the assistant's response with tool calls to the messages
-            assistant_message = {
-                "role": "assistant",
-                "content": response["content"],
-                "tool_calls": [
-                    {
-                        "id": tool_call["id"],
-                        "type": tool_call["type"],
-                        "function": {
-                            "name": tool_call["function"]["name"],
-                            "arguments": tool_call["function"]["arguments"]
+            # Check for tool calls
+            if llm_service.is_tool_call_response(response):
+                logger.info(f"Tool calls detected in iteration {iteration + 1}: {response}")
+                tool_calls = llm_service.extract_tool_calls(response)
+                
+                # Add the assistant's response with tool calls to the messages
+                assistant_message = {
+                    "role": "assistant",
+                    "content": response["content"],
+                    "tool_calls": [
+                        {
+                            "id": tool_call["id"],
+                            "type": tool_call["type"],
+                            "function": {
+                                "name": tool_call["function"]["name"],
+                                "arguments": tool_call["function"]["arguments"]
+                            }
                         }
-                    }
-                    for tool_call in tool_calls
-                ]
-            }
-            messages.append(assistant_message)
-            
-            # Process tool calls
-            for tool_call in tool_calls:
-                # Check authorization
-                system_name = tools_service.get_system_name_for_tool(tool_call["function"]["name"], system_configs)
-                auth_token = oauth2_service.get_valid_token(user.id, system_name)
+                        for tool_call in tool_calls
+                    ]
+                }
+                messages.append(assistant_message)
                 
-                if not auth_token:
-                    # Return authorization URL
-                    system_config = get_system_config(system_name, system_configs)
-                    auth_url = oauth2_service.generate_auth_url(user.id, system_config, bot_url)
-                    return {
-                        "content": f"Please authorize access to {system_name}: {auth_url}",
-                        "metadata": {"auth_url": auth_url}
-                    }
-                
-                # Execute tool call
-                tool_result = tools_service.execute_tool_call(
-                    tool_call,
-                    get_system_config(system_name, system_configs),
-                    auth_token.access_token
-                )
-                
-                # Add tool result to conversation
-                # If tool call failed, provide a more user-friendly error message
-                if not tool_result.get("success", True):
-                    error_msg = tool_result.get("error", "Unknown error")
-                    status_code = tool_result.get("status_code")
+                # Process tool calls
+                for tool_call in tool_calls:
+                    # Check authorization
+                    system_name = tools_service.get_system_name_for_tool(tool_call["function"]["name"], system_configs)
+                    auth_token = oauth2_service.get_valid_token(user.id, system_name)
                     
-                    if status_code == 403:
-                        tool_result_content = f"Access denied: {error_msg}."
-                    elif status_code == 401:
-                        tool_result_content = f"Authentication failed: {error_msg}."
+                    if not auth_token:
+                        # Return authorization URL
+                        system_config = get_system_config(system_name, system_configs)
+                        auth_url = oauth2_service.generate_auth_url(user.id, system_config, bot_url)
+                        return {
+                            "content": f"Please authorize access to {system_name}: {auth_url}",
+                            "metadata": {"auth_url": auth_url}
+                        }
+                    
+                    # Execute tool call
+                    tool_result = tools_service.execute_tool_call(
+                        tool_call,
+                        get_system_config(system_name, system_configs),
+                        auth_token.access_token
+                    )
+                    
+                    # Add tool result to conversation
+                    # If tool call failed, provide a more user-friendly error message
+                    if not tool_result.get("success", True):
+                        error_msg = tool_result.get("error", "Unknown error")
+                        status_code = tool_result.get("status_code")
+                        
+                        if status_code == 403:
+                            tool_result_content = f"Access denied: {error_msg}. Check if there is another way to achieve the user's goal."
+                        elif status_code == 401:
+                            tool_result_content = f"Authentication failed: {error_msg}. The user likely needs to re-authorize access to {system_name}."
+                        else:
+                            tool_result_content = f"Tool call failed: {error_msg}. Check if there is another way to achieve the user's goal."
                     else:
-                        tool_result_content = f"Tool call failed: {error_msg}"
-                else:
-                    tool_result_content = str(tool_result)
+                        tool_result_content = str(tool_result)
+                    
+                    messages.append({
+                        "role": "tool",
+                        "content": tool_result_content,
+                        "tool_call_id": tool_call["id"]
+                    })
                 
-                messages.append({
-                    "role": "tool",
-                    "content": tool_result_content,
-                    "tool_call_id": tool_call["id"]
-                })
-            
-            # Get final response
-            final_response = llm_service.chat_completion(messages)
-            return {"content": final_response["content"]}
+                # Increment iteration counter
+                iteration += 1
+                
+            else:
+                # No tool calls, return the response
+                return {"content": response["content"]}
         
-        return {"content": response["content"]}
+        # If we've exceeded max iterations, send a final prompt
+        logger.warning(f"Maximum iterations ({max_iterations}) exceeded. Sending final prompt.")
+        final_prompt = "You have reached the maximum number of tool calling iterations. Please provide your best response based on the information you have gathered so far, without calling any more tools."
+        messages.append({"role": "user", "content": final_prompt})
+        
+        # Get final response without tools
+        final_response = llm_service.chat_completion(messages)
+        return {"content": final_response["content"]}
         
     except Exception as e:
         logger.error(f"LLM workflow error: {e}")

@@ -31,6 +31,25 @@ def test_llm_config_creation():
     assert config.max_tokens == 1000
     assert config.temperature == 0.7
     assert config.provider == "openai"
+    assert config.max_iterations == 8  # Default value
+
+
+def test_llm_config_with_max_iterations():
+    """Test LLM config creation with custom max_iterations."""
+    config = LLMConfig(
+        api_key="test-key",
+        model="gpt-4",
+        max_tokens=1000,
+        temperature=0.7,
+        max_iterations=5
+    )
+    
+    assert config.api_key == "test-key"
+    assert config.model == "gpt-4"
+    assert config.max_tokens == 1000
+    assert config.temperature == 0.7
+    assert config.provider == "openai"
+    assert config.max_iterations == 5
 
 
 def test_oauth2_config_creation():
@@ -74,16 +93,15 @@ def test_external_system_config_creation():
 
 def test_config_creation():
     """Test main config creation."""
-    llm_config = LLMConfig(api_key="test-key")
+    llm_config = LLMConfig(api_key="test-key", max_iterations=5)
     
     config = Config(
         llm=llm_config,
-        max_iterations=5,
         prompts_dir="./test_prompts"
     )
     
     assert config.llm.api_key == "test-key"
-    assert config.max_iterations == 5
+    assert config.llm.max_iterations == 5
     assert config.prompts_dir == "./test_prompts"
     assert config.database.url == "sqlite:///./limp.db"  # Default value
 
@@ -99,7 +117,8 @@ def test_load_config_from_file():
             "api_key": "test-key",
             "model": "gpt-3.5-turbo",
             "max_tokens": 2000,
-            "temperature": 0.5
+            "temperature": 0.5,
+            "max_iterations": 10
         },
         "external_systems": [
             {
@@ -114,9 +133,8 @@ def test_load_config_from_file():
                 "openapi_spec": "https://example.com/api/openapi.json",
                 "base_url": "https://example.com/api"
             }
-        ],
-        "max_iterations": 15
-    }
+            ]
+        }
     
     with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
         yaml.dump(config_data, f)
@@ -131,9 +149,9 @@ def test_load_config_from_file():
         assert config.llm.model == "gpt-3.5-turbo"
         assert config.llm.max_tokens == 2000
         assert config.llm.temperature == 0.5
+        assert config.llm.max_iterations == 10
         assert len(config.external_systems) == 1
         assert config.external_systems[0].name == "test-system"
-        assert config.max_iterations == 15
         
     finally:
         Path(config_path).unlink()

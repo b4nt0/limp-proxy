@@ -29,6 +29,7 @@ class LLMConfig(BaseModel):
     base_url: Optional[str] = None
     max_tokens: int = Field(default=4000)
     temperature: float = Field(default=0.7)
+    max_iterations: int = Field(default=8, description="Maximum number of tool calling iterations")
 
 
 class OAuth2Config(BaseModel):
@@ -97,7 +98,6 @@ class Config(BaseModel):
     alerts: AlertConfig = Field(default_factory=AlertConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     bot: BotConfig = Field(default_factory=BotConfig)
-    max_iterations: int = Field(default=10)
     prompts_dir: str = Field(default="./prompts")
     context_files_dir: str = Field(default="./context")
     
