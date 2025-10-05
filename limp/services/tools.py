@@ -63,11 +63,30 @@ class ToolsService:
                 if method.upper() not in ["GET", "POST", "PUT", "DELETE", "PATCH"]:
                     continue
                 
+                # Build comprehensive description
+                description_parts = []
+                
+                # Add summary if available
+                if operation.get("summary"):
+                    description_parts.append(operation["summary"])
+                
+                # Add detailed description if available
+                if operation.get("description"):
+                    description_parts.append(operation["description"])
+                
+                # Add tags for context
+                if operation.get("tags"):
+                    tags_str = ", ".join(operation["tags"])
+                    description_parts.append(f"Tags: {tags_str}")
+                
+                # Combine all description parts
+                full_description = "\n\n".join(description_parts) if description_parts else ""
+                
                 tool = {
                     "type": "function",
                     "function": {
                         "name": operation.get("operationId", f"{method}_{path}"),
-                        "description": operation.get("description", ""),
+                        "description": full_description,
                         "parameters": self._convert_parameters(operation.get("parameters", []))
                     }
                 }
@@ -142,11 +161,29 @@ class ToolsService:
             param_name = param["name"]
             param_schema = param.get("schema", {})
             
-            # Build the property schema
+            # Build comprehensive property schema
             property_schema = {
                 "type": param_schema.get("type", "string"),
                 "description": param.get("description", "")
             }
+            
+            # Add format information if available
+            if param_schema.get("format"):
+                property_schema["format"] = param_schema["format"]
+            
+            # Add enum values if available
+            if param_schema.get("enum"):
+                property_schema["enum"] = param_schema["enum"]
+            
+            # Add minimum/maximum for numeric types
+            if param_schema.get("minimum") is not None:
+                property_schema["minimum"] = param_schema["minimum"]
+            if param_schema.get("maximum") is not None:
+                property_schema["maximum"] = param_schema["maximum"]
+            
+            # Add pattern for string types
+            if param_schema.get("pattern"):
+                property_schema["pattern"] = param_schema["pattern"]
             
             # Handle array types - add items specification
             if param_schema.get("type") == "array":
@@ -154,6 +191,25 @@ class ToolsService:
                 property_schema["items"] = {
                     "type": items_schema.get("type", "string")
                 }
+                # Add format to array items if available
+                if items_schema.get("format"):
+                    property_schema["items"]["format"] = items_schema["format"]
+                # Add enum to array items if available
+                if items_schema.get("enum"):
+                    property_schema["items"]["enum"] = items_schema["enum"]
+            
+            # Add parameter location context to description
+            param_in = param.get("in", "query")
+            if param_in != "query":
+                location_context = {
+                    "path": "URL path parameter",
+                    "header": "HTTP header parameter", 
+                    "cookie": "HTTP cookie parameter"
+                }.get(param_in, f"{param_in} parameter")
+                if property_schema["description"]:
+                    property_schema["description"] = f"{property_schema['description']} ({location_context})"
+                else:
+                    property_schema["description"] = location_context
             
             properties[param_name] = property_schema
             

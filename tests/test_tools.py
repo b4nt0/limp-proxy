@@ -495,3 +495,131 @@ def test_convert_parameters_with_arrays():
     # Verify required fields
     assert "organization_id" in result["required"]
     assert "by_resource_ids" not in result["required"]
+
+
+def test_convert_to_openai_tools_with_rich_descriptions():
+    """Test that OpenAPI tools include rich descriptions from summaries, descriptions, and tags."""
+    service = ToolsService()
+    
+    openapi_spec = {
+        "paths": {
+            "/api/v1/organizations": {
+                "get": {
+                    "summary": "Get a list of organizations",
+                    "description": "Returns a list of organizations that the authenticated user has access to.",
+                    "tags": ["organization", "company", "context"],
+                    "operationId": "getOrganizations",
+                    "parameters": []
+                }
+            },
+            "/api/v1/workspaces": {
+                "get": {
+                    "summary": "Get a list of portfolios",
+                    "description": "Returns a list of portfolios for the selected organization.",
+                    "tags": ["portfolio", "context"],
+                    "operationId": "getPortfolios",
+                    "parameters": [
+                        {
+                            "name": "organization_id",
+                            "in": "query",
+                            "required": True,
+                            "description": "The ID of the organization whose portfolios should be listed.",
+                            "schema": {"type": "integer"}
+                        }
+                    ]
+                }
+            }
+        }
+    }
+    
+    tools = service.convert_to_openai_tools(openapi_spec)
+    
+    # Verify we have the expected tools
+    assert len(tools) == 2
+    
+    # Find the getOrganizations tool
+    org_tool = next(tool for tool in tools if tool["function"]["name"] == "getOrganizations")
+    assert org_tool is not None
+    
+    # Verify rich description includes summary, description, and tags
+    description = org_tool["function"]["description"]
+    assert "Get a list of organizations" in description
+    assert "Returns a list of organizations that the authenticated user has access to." in description
+    assert "Tags: organization, company, context" in description
+    
+    # Find the getPortfolios tool
+    portfolio_tool = next(tool for tool in tools if tool["function"]["name"] == "getPortfolios")
+    assert portfolio_tool is not None
+    
+    # Verify rich description
+    description = portfolio_tool["function"]["description"]
+    assert "Get a list of portfolios" in description
+    assert "Returns a list of portfolios for the selected organization." in description
+    assert "Tags: portfolio, context" in description
+    
+    # Verify parameter description is preserved
+    params = portfolio_tool["function"]["parameters"]
+    assert "organization_id" in params["properties"]
+    assert params["properties"]["organization_id"]["description"] == "The ID of the organization whose portfolios should be listed."
+    assert "organization_id" in params["required"]
+
+
+def test_convert_parameters_with_enhanced_metadata():
+    """Test that parameter conversion includes format, enum, and other metadata."""
+    service = ToolsService()
+    
+    parameters = [
+        {
+            "name": "dt_from",
+            "in": "query",
+            "required": False,
+            "description": "Start date of the interval (YYYY-MM-DD).",
+            "schema": {
+                "type": "string",
+                "format": "date"
+            }
+        },
+        {
+            "name": "per_time_period",
+            "in": "query",
+            "required": True,
+            "description": "Grouping by time: day, week, month, or year.",
+            "schema": {
+                "type": "string",
+                "enum": ["day", "week", "month", "year"]
+            }
+        },
+        {
+            "name": "workspace_id",
+            "in": "path",
+            "required": True,
+            "description": "ID of the portfolio.",
+            "schema": {
+                "type": "integer",
+                "minimum": 1
+            }
+        }
+    ]
+    
+    result = service._convert_parameters(parameters)
+    
+    # Verify date format is preserved
+    dt_from = result["properties"]["dt_from"]
+    assert dt_from["type"] == "string"
+    assert dt_from["format"] == "date"
+    assert "Start date of the interval (YYYY-MM-DD)." in dt_from["description"]
+    
+    # Verify enum values are preserved
+    per_time_period = result["properties"]["per_time_period"]
+    assert per_time_period["type"] == "string"
+    assert per_time_period["enum"] == ["day", "week", "month", "year"]
+    assert "Grouping by time: day, week, month, or year." in per_time_period["description"]
+    assert "per_time_period" in result["required"]
+    
+    # Verify numeric constraints and path parameter context
+    workspace_id = result["properties"]["workspace_id"]
+    assert workspace_id["type"] == "integer"
+    assert workspace_id["minimum"] == 1
+    assert "ID of the portfolio." in workspace_id["description"]
+    assert "(URL path parameter)" in workspace_id["description"]
+    assert "workspace_id" in result["required"]
