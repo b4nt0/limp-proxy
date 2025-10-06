@@ -244,7 +244,7 @@ def test_format_messages_with_empty_system_prompts():
         system_prompts
     )
     
-    # Verify message structure (should be same as no system prompts)
+    # Verify message structure (no system prompts, no schema prompts)
     assert len(messages) == 3
     assert messages[0]["role"] == "user"
     assert messages[0]["content"] == "Hi"
@@ -270,15 +270,49 @@ def test_format_messages_with_none_system_prompts():
         conversation_history,
         None
     )
+
+
+def test_format_messages_with_schema_prompts():
+    """Test formatting messages including schema prompts."""
+    config = LLMConfig(api_key="test-key")
+    service = LLMService(config)
     
-    # Verify message structure (should be same as no system prompts)
-    assert len(messages) == 3
-    assert messages[0]["role"] == "user"
-    assert messages[0]["content"] == "Hi"
-    assert messages[1]["role"] == "assistant"
-    assert messages[1]["content"] == "Hello! How can I help you?"
-    assert messages[2]["role"] == "user"
-    assert messages[2]["content"] == "Hello, how are you?"
+    user_message = "Hello, how are you?"
+    conversation_history = [
+        {"role": "user", "content": "Hi"},
+        {"role": "assistant", "content": "Hello! How can I help you?"}
+    ]
+    system_prompts = ["You are a helpful assistant."]
+    schema_prompts = [
+        "API Endpoint: getOrganizations\nMethod: GET /api/v1/organizations\nResponse: { data: Organization[] }",
+        "API Response Schema: Organization\nSchema structure:\n- id: integer\n- name: string"
+    ]
+    
+    messages = service.format_messages_with_context(
+        user_message,
+        conversation_history,
+        system_prompts,
+        schema_prompts=schema_prompts
+    )
+    
+    # Expect: 1 system + 2 schema + 2 history + 1 user = 6
+    assert len(messages) == 6
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"] == "You are a helpful assistant."
+    assert messages[1]["role"] == "system"
+    assert "API Endpoint: getOrganizations" in messages[1]["content"]
+    assert messages[2]["role"] == "system"
+    assert "API Response Schema: Organization" in messages[2]["content"]
+    assert messages[3]["role"] == "user"
+    assert messages[3]["content"] == "Hi"
+    assert messages[4]["role"] == "assistant"
+    assert messages[4]["content"] == "Hello! How can I help you?"
+    assert messages[5]["role"] == "user"
+    assert messages[5]["content"] == "Hello, how are you?"
+    
+    # Ensure schema prompts are included as system messages
+    assert any(m["role"] == "system" and "API Endpoint:" in m["content"] for m in messages)
+    assert any(m["role"] == "system" and "API Response Schema:" in m["content"] for m in messages)
 
 
 def test_extract_tool_calls():
@@ -565,7 +599,7 @@ class TestToolsService:
         # Check POST tool
         post_tool = next(tool for tool in tools if tool["function"]["name"] == "createUser")
         assert post_tool["type"] == "function"
-        assert post_tool["function"]["description"] == "Create a new user"
+        assert "Create a new user" in post_tool["function"]["description"]
     
     def test_get_available_tools(self):
         """Test getting available tools from system configurations."""

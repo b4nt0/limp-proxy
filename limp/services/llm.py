@@ -32,9 +32,13 @@ class LLMService:
             kwargs = {
                 "model": self.config.model,
                 "messages": messages,
-                "max_tokens": self.config.max_tokens,
-                "temperature": self.config.temperature
             }
+
+            if self.config.model.startswith("gpt-5"):
+                kwargs["max_completion_tokens"] = self.config.max_tokens
+            else:
+                kwargs["max_tokens"] = self.config.max_tokens
+                kwargs["temperature"] = self.config.temperature
             
             if tools:
                 kwargs["tools"] = tools
@@ -61,14 +65,21 @@ class LLMService:
         self,
         user_message: str,
         conversation_history: List[Dict[str, str]],
-        system_prompts: Optional[List[str]] = None
+        system_prompts: Optional[List[str]] = None,
+        schema_prompts: Optional[List[str]] = None
     ) -> List[Dict[str, str]]:
         """Format messages with conversation context."""
         messages = []
         
+        # Add system prompts first
         if system_prompts:
             for system_prompt in system_prompts:
                 messages.append({"role": "system", "content": system_prompt})
+        
+        # Add schema prompts for API context
+        if schema_prompts:
+            for schema_prompt in schema_prompts:
+                messages.append({"role": "system", "content": schema_prompt})
         
         # Add conversation history
         messages.extend(conversation_history)

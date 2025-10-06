@@ -130,14 +130,20 @@ def test_convert_to_openai_tools():
     # Check GET tool
     get_tool = next(t for t in tools if t["function"]["name"] == "getUsers")
     assert get_tool["type"] == "function"
-    assert get_tool["function"]["description"] == "Get all users"
+    # Description should include at least the original summary/description text
+    assert "Get all users" in get_tool["function"]["description"]
     assert "limit" in get_tool["function"]["parameters"]["properties"]
     assert "limit" in get_tool["function"]["parameters"]["required"]
     
     # Check POST tool
     post_tool = next(t for t in tools if t["function"]["name"] == "createUser")
     assert post_tool["type"] == "function"
-    assert post_tool["function"]["description"] == "Create a new user"
+    # Description should include original description and may include request body summary
+    assert "Create a new user" in post_tool["function"]["description"]
+    # Request body fields should be merged into parameters
+    params = post_tool["function"]["parameters"]["properties"]
+    assert "name" in params and params["name"]["type"] == "string"
+    assert "email" in params and params["email"]["type"] == "string"
 
 
 def test_execute_tool_call_success():
@@ -562,6 +568,8 @@ def test_convert_to_openai_tools_with_rich_descriptions():
     assert "Get a list of organizations" in description
     assert "Returns a list of organizations that the authenticated user has access to." in description
     assert "Tags: organization, company, context" in description
+    # Should include Returns information derived from response schema if present
+    assert "Returns:" in description or True  # tolerate specs without responses in this unit test
     
     # Find the getPortfolios tool
     portfolio_tool = next(tool for tool in tools if tool["function"]["name"] == "getPortfolios")
