@@ -2,6 +2,11 @@
 
 This project makes it easy to expose an LLM equipped with tools that connect to external systems through instant messaging programs like Slack or Microsoft Teams.
 
+## License
+
+This project is licensed under the [MIT License](./LICENSE).
+© 2025 Anton Baranenko
+
 ## Use case
 
 Expose your system as an instant messaging (IM) bot in a multi-tenant environment.
