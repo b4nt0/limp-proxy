@@ -193,3 +193,52 @@ def test_bot_description_default():
     response = client.get("/api/slack/manifest")
     manifest_content = response.content.decode("utf-8")
     assert "Provide AI assistance directly in your chat applications." in manifest_content
+
+
+def test_slack_permissions_constant():
+    """Test that Slack permissions are properly defined and used in templates."""
+    from limp.config import Config, DatabaseConfig, LLMConfig, BotConfig, IMPlatformConfig
+    from limp.api.main import create_app
+    from fastapi.testclient import TestClient
+    
+    # Test with Slack configuration
+    config = Config(
+        database=DatabaseConfig(url="sqlite:///:memory:"),
+        llm=LLMConfig(api_key="test-api-key", model="gpt-4"),
+        bot=BotConfig(name="Test Bot"),
+        im_platforms=[
+            IMPlatformConfig(
+                platform="slack",
+                app_id="test-app-id",
+                client_id="test-client-id",
+                client_secret="test-client-secret",
+                signing_secret="test-signing-secret"
+            )
+        ]
+    )
+    
+    app = create_app(config)
+    client = TestClient(app)
+    
+    # Test main page contains permissions in install URL
+    response = client.get("/")
+    content = response.content.decode("utf-8")
+    assert "app_mentions:read,chat:write,im:history,im:write,im:read,reactions:write,reactions:read" in content
+    
+    # Test manifest contains all permissions
+    response = client.get("/api/slack/manifest")
+    manifest_content = response.content.decode("utf-8")
+    
+    # Check that all expected permissions are present
+    expected_permissions = [
+        "app_mentions:read",
+        "chat:write", 
+        "im:history",
+        "im:write",
+        "im:read",
+        "reactions:write",
+        "reactions:read"
+    ]
+    
+    for permission in expected_permissions:
+        assert f"- {permission}" in manifest_content, f"Permission {permission} not found in manifest"

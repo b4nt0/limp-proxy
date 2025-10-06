@@ -12,7 +12,7 @@ import logging
 
 from ..database import get_session, init_database, create_engine
 from ..config import Config, set_config
-from .slack import slack_router
+from .slack import slack_router, SLACK_BOT_PERMISSIONS
 from .teams import teams_router
 from .oauth2 import oauth2_router
 from .admin import admin_router
@@ -86,7 +86,8 @@ def create_app(app_config: Config) -> FastAPI:
             "bot_name": config.bot.name if config.bot.name else "LIMP",
             "bot_description": config.bot.description,
             "bot_url": bot_url,
-            "slack_client_id": slack_client_id
+            "slack_client_id": slack_client_id,
+            "slack_permissions": SLACK_BOT_PERMISSIONS
         })
     
     @app.get("/install-success", response_class=HTMLResponse)

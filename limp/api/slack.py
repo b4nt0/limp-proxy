@@ -26,6 +26,17 @@ from .im import handle_user_message, get_bot_url
 
 logger = logging.getLogger(__name__)
 
+# Slack permissions required by the bot
+SLACK_BOT_PERMISSIONS = [
+    "app_mentions:read",
+    "chat:write", 
+    "im:history",
+    "im:write",
+    "im:read",
+    "reactions:write",
+    "reactions:read"
+]
+
 slack_router = APIRouter()
 
 
@@ -464,7 +475,8 @@ async def get_slack_manifest(request: Request):
         manifest_content = templates.get_template("slack/manifest.yaml").render(
             bot_url=bot_url,
             bot_name=bot_name,
-            bot_description=bot_description
+            bot_description=bot_description,
+            bot_permissions=SLACK_BOT_PERMISSIONS
         )
         
         # Return the manifest as YAML
