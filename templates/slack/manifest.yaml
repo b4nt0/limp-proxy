@@ -1,0 +1,30 @@
+display_information:
+  name: LLM IM Proxy (LIMP)
+  description: Provide AI assistance directly in your chat applications.
+  background_color: "#474641"
+features:
+  bot_user:
+    display_name: LLM IM Proxy (LIMP)
+    always_online: false
+oauth_config:
+  redirect_urls:
+    - {{ bot_url }}/api/slack/install
+  scopes:
+    bot:
+      - app_mentions:read
+      - chat:write
+      - im:history
+      - im:write
+      - im:read
+settings:
+  event_subscriptions:
+    request_url: {{ bot_url }}/api/slack/webhook
+    bot_events:
+      - app_mention
+      - message.im
+  interactivity:
+    is_enabled: true
+    request_url: {{ bot_url }}/api/slack/interactivity
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

@@ -10,18 +10,19 @@ installation data in the slack_organizations table.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, Form
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional
 import logging
 import httpx
 import json
+import os
 
 from ..database import get_session
 from ..services.im import IMServiceFactory
 from ..config import get_config
 from ..models.slack_organization import SlackOrganization
-from .im import handle_user_message
+from .im import handle_user_message, get_bot_url
 
 logger = logging.getLogger(__name__)
 
@@ -431,4 +432,52 @@ async def handle_slack_interactivity(
         raise
     except Exception as e:
         logger.error(f"Slack interactivity error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@slack_router.get("/manifest")
+async def get_slack_manifest(request: Request):
+    """
+    Serve the Slack manifest YAML file.
+    
+    This endpoint serves the Slack app manifest with the bot_url dynamically
+    substituted from the current request context.
+    
+    Args:
+        request: FastAPI request object to determine the bot URL
+        
+    Returns:
+        YAML content of the Slack manifest
+    """
+    try:
+        # Get bot URL using the global function
+        config = get_config()
+        bot_url = get_bot_url(config, request)
+        
+        # Read the manifest template
+        manifest_path = os.path.join("templates", "slack", "manifest.yaml")
+        
+        if not os.path.exists(manifest_path):
+            logger.error(f"Slack manifest template not found at: {manifest_path}")
+            raise HTTPException(status_code=404, detail="Slack manifest template not found")
+        
+        with open(manifest_path, 'r') as f:
+            manifest_content = f.read()
+        
+        # Substitute the bot_url placeholder
+        manifest_content = manifest_content.replace("{{ bot_url }}", bot_url)
+        
+        # Return the manifest as YAML
+        return Response(
+            content=manifest_content,
+            media_type="application/x-yaml",
+            headers={
+                "Content-Disposition": "attachment; filename=slack-manifest.yaml"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving Slack manifest: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")

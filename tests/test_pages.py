@@ -17,6 +17,9 @@ def test_root_page_with_slack_configured(test_client: TestClient):
     assert "<html" in response.content.decode("utf-8")
     assert "Install to Slack" in response.content.decode("utf-8")
     assert "slack.com/oauth/v2/authorize" in response.content.decode("utf-8")
+    # Check that manifest link is present
+    assert "Download Slack Manifest" in response.content.decode("utf-8")
+    assert "/api/slack/manifest" in response.content.decode("utf-8")
 
 
 def test_root_page_without_slack_configured(test_client: TestClient):
@@ -58,6 +61,9 @@ def test_root_page_without_slack_configured(test_client: TestClient):
     assert "<html" in response.content.decode("utf-8")
     assert "Slack Not Configured" in response.content.decode("utf-8")
     assert "Configuration Error" in response.content.decode("utf-8")
+    # Check that manifest link is NOT present when Slack is not configured
+    assert "Download Slack Manifest" not in response.content.decode("utf-8")
+    assert "/api/slack/manifest" not in response.content.decode("utf-8")
 
 
 def test_install_success_page_slack(test_client: TestClient):
@@ -97,3 +103,33 @@ def test_install_success_page_missing_system(test_client: TestClient):
     response = test_client.get("/install-success")
     
     assert response.status_code == 422  # FastAPI validation error for missing required parameter
+
+
+def test_slack_manifest_endpoint(test_client: TestClient):
+    """Test Slack manifest endpoint."""
+    response = test_client.get("/api/slack/manifest")
+    
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/x-yaml"
+    assert "attachment; filename=slack-manifest.yaml" in response.headers["content-disposition"]
+    
+    # Check that the manifest contains expected content
+    manifest_content = response.content.decode("utf-8")
+    assert "display_information:" in manifest_content
+    assert "name: LLM IM Proxy (LIMP)" in manifest_content
+    assert "bot_user:" in manifest_content
+    assert "oauth_config:" in manifest_content
+    assert "settings:" in manifest_content
+    
+    # Check that bot_url placeholder has been replaced with actual URL
+    assert "{{ bot_url }}" not in manifest_content
+    assert "http://testserver" in manifest_content  # TestClient uses testserver as base URL
+
+
+def test_slack_manifest_endpoint_missing_template(test_client: TestClient):
+    """Test Slack manifest endpoint when template is missing."""
+    with patch("os.path.exists", return_value=False):
+        response = test_client.get("/api/slack/manifest")
+        
+        assert response.status_code == 404
+        assert "Slack manifest template not found" in response.json()["detail"]
