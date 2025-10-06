@@ -16,6 +16,8 @@ oauth_config:
       - im:history
       - im:write
       - im:read
+      - reactions:write
+      - reactions:read
 settings:
   event_subscriptions:
     request_url: {{ bot_url }}/api/slack/webhook

@@ -54,6 +54,12 @@ class TestIterativeWorkflow:
         
         # Mock OAuth2 service
         self.oauth2_service.get_valid_token.return_value = Mock(access_token="test-token")
+        
+        # Mock IM service
+        self.mock_im_service = Mock()
+        self.mock_im_service.acknowledge_message.return_value = True
+        self.mock_im_service.send_temporary_message.return_value = "temp_msg_123"
+        self.mock_im_service.cleanup_temporary_messages.return_value = True
     
     @pytest.mark.asyncio
     @patch('limp.api.im.get_config')
@@ -76,7 +82,10 @@ class TestIterativeWorkflow:
             self.llm_service,
             self.tools_service,
             self.db,
-            self.bot_url
+            self.bot_url,
+            self.mock_im_service,
+            "test-channel",
+            "1234567890.123456"
         )
         
         assert result["content"] == "Hello, how can I help you?"
@@ -127,7 +136,10 @@ class TestIterativeWorkflow:
             self.llm_service,
             self.tools_service,
             self.db,
-            self.bot_url
+            self.bot_url,
+            self.mock_im_service,
+            "test-channel",
+            "1234567890.123456"
         )
         
         assert result["content"] == "Based on the tool result, here's the answer."
@@ -182,7 +194,10 @@ class TestIterativeWorkflow:
             self.llm_service,
             self.tools_service,
             self.db,
-            self.bot_url
+            self.bot_url,
+            self.mock_im_service,
+            "test-channel",
+            "1234567890.123456"
         )
         
         assert result["content"] == "Based on all the tool results, here's the comprehensive answer."
@@ -241,7 +256,10 @@ class TestIterativeWorkflow:
             self.llm_service,
             self.tools_service,
             self.db,
-            self.bot_url
+            self.bot_url,
+            self.mock_im_service,
+            "test-channel",
+            "1234567890.123456"
         )
         
         assert result["content"] == "I've reached the iteration limit, but here's what I found so far."
@@ -290,7 +308,10 @@ class TestIterativeWorkflow:
             self.llm_service,
             self.tools_service,
             self.db,
-            self.bot_url
+            self.bot_url,
+            self.mock_im_service,
+            "test-channel",
+            "1234567890.123456"
         )
         
         assert "Please authorize access to test-system" in result["content"]
@@ -349,7 +370,10 @@ class TestIterativeWorkflow:
             self.llm_service,
             self.tools_service,
             self.db,
-            self.bot_url
+            self.bot_url,
+            self.mock_im_service,
+            "test-channel",
+            "1234567890.123456"
         )
         
         assert result["content"] == "I encountered an error, but here's what I can tell you."
@@ -405,7 +429,10 @@ class TestIterativeWorkflow:
             self.llm_service,
             self.tools_service,
             self.db,
-            self.bot_url
+            self.bot_url,
+            self.mock_im_service,
+            "test-channel",
+            "1234567890.123456"
         )
         
         # Verify that format_messages_with_context was called with the conversation history
@@ -435,7 +462,10 @@ class TestIterativeWorkflow:
             self.llm_service,
             self.tools_service,
             self.db,
-            self.bot_url
+            self.bot_url,
+            self.mock_im_service,
+            "test-channel",
+            "1234567890.123456"
         )
         
         assert result["content"] == "There was an issue with the AI service."
@@ -486,7 +516,10 @@ class TestIterativeWorkflow:
             self.llm_service,
             self.tools_service,
             self.db,
-            self.bot_url
+            self.bot_url,
+            self.mock_im_service,
+            "test-channel",
+            "1234567890.123456"
         )
         
         assert result["content"] == "Final response after 5 iterations."
@@ -533,7 +566,10 @@ class TestIterativeWorkflow:
             self.llm_service,
             self.tools_service,
             self.db,
-            self.bot_url
+            self.bot_url,
+            self.mock_im_service,
+            "test-channel",
+            "1234567890.123456"
         )
         
         # Verify that the final call was made without tools

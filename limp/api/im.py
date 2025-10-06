@@ -97,6 +97,9 @@ async def handle_user_message(
                 
                 return {"status": "ok", "action": "authorization_required"}
         
+        # Acknowledge the user's message
+        im_service.acknowledge_message(message_data["channel"], message_data.get("timestamp"))
+        
         # Get or create conversation and store user message
         conversation = get_or_create_conversation(db, user.id, message_data, platform)
         store_user_message(db, conversation.id, message_data["text"], message_data.get("timestamp"), external_id)
@@ -109,7 +112,7 @@ async def handle_user_message(
         llm_service = LLMService(get_config().llm)
         tools_service = ToolsService()
         
-        # Process message through LLM workflow
+        # Process message through LLM workflow with progress tracking
         response = await process_llm_workflow(
             message_data["text"],
             conversation_history,
@@ -118,7 +121,10 @@ async def handle_user_message(
             llm_service,
             tools_service,
             db,
-            bot_url
+            bot_url,
+            im_service,
+            message_data["channel"],
+            message_data.get("timestamp")
         )
         
         # Store assistant response
@@ -148,7 +154,10 @@ async def process_llm_workflow(
     llm_service: LLMService,
     tools_service: ToolsService,
     db: Session,
-    bot_url: str
+    bot_url: str,
+    im_service: Any,
+    channel: str,
+    original_message_ts: str = None
 ) -> Dict[str, Any]:
     """Process message through LLM workflow with iterative tool calling."""
     try:
@@ -168,6 +177,7 @@ async def process_llm_workflow(
         # Get max iterations from config
         max_iterations = config.llm.max_iterations
         iteration = 0
+        temporary_message_ids = []  # Track temporary messages for cleanup
         
         # Iterative tool calling loop
         while iteration < max_iterations:
@@ -178,6 +188,19 @@ async def process_llm_workflow(
             if llm_service.is_tool_call_response(response):
                 logger.info(f"Tool calls detected in iteration {iteration + 1}: {response}")
                 tool_calls = llm_service.extract_tool_calls(response)
+                
+                # Send temporary progress message for non-final iterations
+                if iteration < max_iterations - 1:
+                    # Get the system name for the first tool call to show what we're talking to
+                    system_name = "External System"
+                    if tool_calls:
+                        first_tool_name = tool_calls[0]["function"]["name"]
+                        system_name = tools_service.get_system_name_for_tool(first_tool_name, system_configs)
+                    
+                    progress_content = f"Processing... (iteration {iteration + 1}, talking to {system_name})"
+                    temp_message_id = im_service.send_temporary_message(channel, progress_content, original_message_ts)
+                    if temp_message_id:
+                        temporary_message_ids.append(temp_message_id)
                 
                 # Add the assistant's response with tool calls to the messages
                 assistant_message = {
@@ -244,11 +267,16 @@ async def process_llm_workflow(
                 iteration += 1
                 
             else:
-                # No tool calls, return the response
+                # No tool calls, clean up temporary messages and return the response
+                if temporary_message_ids:
+                    im_service.cleanup_temporary_messages(channel, temporary_message_ids)
                 return {"content": response["content"]}
         
-        # If we've exceeded max iterations, send a final prompt
+        # If we've exceeded max iterations, clean up temporary messages and send a final prompt
         logger.warning(f"Maximum iterations ({max_iterations}) exceeded. Sending final prompt.")
+        if temporary_message_ids:
+            im_service.cleanup_temporary_messages(channel, temporary_message_ids)
+        
         final_prompt = "You have reached the maximum number of tool calling iterations. Please provide your best response based on the information you have gathered so far, without calling any more tools."
         messages.append({"role": "user", "content": final_prompt})
         
@@ -258,6 +286,9 @@ async def process_llm_workflow(
         
     except Exception as e:
         logger.error(f"LLM workflow error: {e}")
+        # Clean up any temporary messages on error
+        if 'temporary_message_ids' in locals() and temporary_message_ids:
+            im_service.cleanup_temporary_messages(channel, temporary_message_ids)
         return {
             "content": llm_service.get_error_message(e),
             "metadata": {"error": True}

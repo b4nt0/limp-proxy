@@ -50,6 +50,21 @@ class IMService(ABC):
         """Get the DM channel ID for a specific user."""
         pass
     
+    @abstractmethod
+    def acknowledge_message(self, channel: str, message_ts: str) -> bool:
+        """Acknowledge a user's message (e.g., add reaction)."""
+        pass
+    
+    @abstractmethod
+    def send_temporary_message(self, channel: str, content: str, original_message_ts: str = None) -> Optional[str]:
+        """Send a temporary message and return its identifier for later cleanup."""
+        pass
+    
+    @abstractmethod
+    def cleanup_temporary_messages(self, channel: str, message_ids: List[str]) -> bool:
+        """Clean up temporary messages by their identifiers."""
+        pass
+    
 
 
 class SlackService(IMService):
@@ -296,6 +311,126 @@ class SlackService(IMService):
         except Exception as e:
             logger.error(f"Error getting Slack DM channel: {e}")
             return user_id  # Fallback
+    
+    def acknowledge_message(self, channel: str, message_ts: str) -> bool:
+        """Acknowledge a user's message by adding a green checkmark reaction."""
+        if not self.bot_token:
+            logger.error("No bot token available for Slack reaction")
+            return False
+        
+        try:
+            response = requests.post(
+                "https://slack.com/api/reactions.add",
+                headers={
+                    "Authorization": f"Bearer {self.bot_token}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "channel": channel,
+                    "timestamp": message_ts,
+                    "name": "white_check_mark"  # Green checkmark emoji
+                },
+                timeout=10
+            )
+            response.raise_for_status()
+            result = response.json()
+            
+            if result.get("ok"):
+                logger.info(f"Successfully added reaction to Slack message {message_ts}")
+                return True
+            else:
+                logger.error(f"Slack API error adding reaction: {result.get('error')}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"HTTP error adding Slack reaction: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Error adding Slack reaction: {e}")
+            return False
+    
+    def send_temporary_message(self, channel: str, content: str, original_message_ts: str = None) -> Optional[str]:
+        """Send a temporary message with content in square brackets and return message timestamp."""
+        if not self.bot_token:
+            logger.error("No bot token available for Slack temporary message")
+            return None
+        
+        try:
+            # Format content with square brackets to indicate it's temporary
+            formatted_content = f"[{content}]"
+            
+            payload = {
+                "channel": channel,
+                "text": formatted_content
+            }
+            
+            # If we have the original message timestamp, use it for threading
+            if original_message_ts:
+                payload["thread_ts"] = original_message_ts
+            
+            response = requests.post(
+                "https://slack.com/api/chat.postMessage",
+                headers={
+                    "Authorization": f"Bearer {self.bot_token}",
+                    "Content-Type": "application/json"
+                },
+                json=payload,
+                timeout=10
+            )
+            response.raise_for_status()
+            result = response.json()
+            
+            if result.get("ok"):
+                message_ts = result.get("ts")
+                logger.info(f"Successfully sent temporary message to Slack channel {channel}: {message_ts}")
+                return message_ts
+            else:
+                logger.error(f"Slack API error sending temporary message: {result.get('error')}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"HTTP error sending Slack temporary message: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error sending Slack temporary message: {e}")
+            return None
+    
+    def cleanup_temporary_messages(self, channel: str, message_ids: List[str]) -> bool:
+        """Clean up temporary messages by deleting them."""
+        if not self.bot_token:
+            logger.error("No bot token available for Slack message cleanup")
+            return False
+        
+        success_count = 0
+        for message_ts in message_ids:
+            try:
+                response = requests.post(
+                    "https://slack.com/api/chat.delete",
+                    headers={
+                        "Authorization": f"Bearer {self.bot_token}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "channel": channel,
+                        "ts": message_ts
+                    },
+                    timeout=10
+                )
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("ok"):
+                    logger.info(f"Successfully deleted temporary Slack message {message_ts}")
+                    success_count += 1
+                else:
+                    logger.error(f"Slack API error deleting message {message_ts}: {result.get('error')}")
+                    
+            except requests.exceptions.RequestException as e:
+                logger.error(f"HTTP error deleting Slack message {message_ts}: {e}")
+            except Exception as e:
+                logger.error(f"Error deleting Slack message {message_ts}: {e}")
+        
+        return success_count > 0
 
 
 class TeamsService(IMService):
@@ -393,6 +528,52 @@ class TeamsService(IMService):
         # The user_id should already be the DM channel ID in Teams
         logger.info(f"Using user_id {user_id} as DM channel for Teams")
         return user_id
+    
+    def acknowledge_message(self, channel: str, message_ts: str) -> bool:
+        """Acknowledge a user's message by sending a brief acknowledgment."""
+        # For Teams, we'll send a simple acknowledgment message
+        # Since Teams doesn't have reactions like Slack, we use a brief message
+        try:
+            ack_content = "✅ Processing your request..."
+            logger.info(f"Sending acknowledgment to Teams channel {channel}")
+            return self.send_message(channel, ack_content)
+        except Exception as e:
+            logger.error(f"Error sending Teams acknowledgment: {e}")
+            return False
+    
+    def send_temporary_message(self, channel: str, content: str, original_message_ts: str = None) -> Optional[str]:
+        """Send a temporary message and return a placeholder identifier."""
+        try:
+            # Format content with square brackets to indicate it's temporary
+            formatted_content = f"[{content}]"
+            logger.info(f"Sending temporary message to Teams channel {channel}: {formatted_content}")
+            
+            # For Teams, we'll use a simple message and return a placeholder ID
+            # In a real implementation, you'd use the Teams Bot Framework
+            # Teams threading is handled differently, but we can still use the original_message_ts for context
+            success = self.send_message(channel, formatted_content)
+            if success:
+                # Return a placeholder ID - in real implementation, you'd get the actual message ID
+                return f"teams_temp_{channel}_{hash(formatted_content)}"
+            return None
+        except Exception as e:
+            logger.error(f"Error sending Teams temporary message: {e}")
+            return None
+    
+    def cleanup_temporary_messages(self, channel: str, message_ids: List[str]) -> bool:
+        """Clean up temporary messages (placeholder implementation for Teams)."""
+        # For Teams, message deletion is more complex and depends on the Bot Framework
+        # This is a placeholder implementation
+        try:
+            logger.info(f"Cleaning up {len(message_ids)} temporary messages in Teams channel {channel}")
+            # In a real implementation, you'd use the Teams Bot Framework to delete messages
+            # For now, we'll just log the cleanup attempt
+            for message_id in message_ids:
+                logger.info(f"Would delete Teams message {message_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error cleaning up Teams temporary messages: {e}")
+            return False
 
 
 class IMServiceFactory:
