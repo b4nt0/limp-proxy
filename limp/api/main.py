@@ -83,6 +83,8 @@ def create_app(app_config: Config) -> FastAPI:
         return templates.TemplateResponse("install.html", {
             "request": request,
             "title": config.bot.name if config.bot.name else "LIMP - LLM IM Proxy",
+            "bot_name": config.bot.name if config.bot.name else "LIMP",
+            "bot_description": config.bot.description,
             "bot_url": bot_url,
             "slack_client_id": slack_client_id
         })

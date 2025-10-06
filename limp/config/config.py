@@ -84,6 +84,7 @@ class LoggingConfig(BaseModel):
 class BotConfig(BaseModel):
     """Bot configuration."""
     name: str = Field(default="LIMP", description="Display name of this LIMP instance")
+    description: str = Field(default="Provide AI assistance directly in your chat applications.", description="Description of this LIMP instance")
     url: Optional[str] = Field(default=None, description="URL where LIMP is deployed")
     system_prompts: List[str] = Field(default_factory=list, description="List of system prompts to include in LLM conversations")
 

@@ -440,8 +440,8 @@ async def get_slack_manifest(request: Request):
     """
     Serve the Slack manifest YAML file.
     
-    This endpoint serves the Slack app manifest with the bot_url dynamically
-    substituted from the current request context.
+    This endpoint serves the Slack app manifest with the bot_url and bot_name
+    dynamically substituted from the current request context using Jinja2 templating.
     
     Args:
         request: FastAPI request object to determine the bot URL
@@ -450,22 +450,22 @@ async def get_slack_manifest(request: Request):
         YAML content of the Slack manifest
     """
     try:
-        # Get bot URL using the global function
+        # Get bot URL, name, and description using the global function
         config = get_config()
         bot_url = get_bot_url(config, request)
+        bot_name = config.bot.name if config.bot.name else "LIMP"
+        bot_description = config.bot.description
         
-        # Read the manifest template
-        manifest_path = os.path.join("templates", "slack", "manifest.yaml")
+        # Create templates instance (same as in main.py)
+        from fastapi.templating import Jinja2Templates
+        templates = Jinja2Templates(directory="templates")
         
-        if not os.path.exists(manifest_path):
-            logger.error(f"Slack manifest template not found at: {manifest_path}")
-            raise HTTPException(status_code=404, detail="Slack manifest template not found")
-        
-        with open(manifest_path, 'r') as f:
-            manifest_content = f.read()
-        
-        # Substitute the bot_url placeholder
-        manifest_content = manifest_content.replace("{{ bot_url }}", bot_url)
+        # Render the manifest template
+        manifest_content = templates.get_template("slack/manifest.yaml").render(
+            bot_url=bot_url,
+            bot_name=bot_name,
+            bot_description=bot_description
+        )
         
         # Return the manifest as YAML
         return Response(

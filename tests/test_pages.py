@@ -116,8 +116,9 @@ def test_slack_manifest_endpoint(test_client: TestClient):
     # Check that the manifest contains expected content
     manifest_content = response.content.decode("utf-8")
     assert "display_information:" in manifest_content
-    assert "name: LLM IM Proxy (LIMP)" in manifest_content
+    assert "name: LIMP" in manifest_content
     assert "bot_user:" in manifest_content
+    assert "display_name: LIMP" in manifest_content
     assert "oauth_config:" in manifest_content
     assert "settings:" in manifest_content
     
@@ -128,8 +129,67 @@ def test_slack_manifest_endpoint(test_client: TestClient):
 
 def test_slack_manifest_endpoint_missing_template(test_client: TestClient):
     """Test Slack manifest endpoint when template is missing."""
-    with patch("os.path.exists", return_value=False):
+    with patch("fastapi.templating.Jinja2Templates.get_template", side_effect=Exception("Template not found")):
         response = test_client.get("/api/slack/manifest")
         
-        assert response.status_code == 404
-        assert "Slack manifest template not found" in response.json()["detail"]
+        assert response.status_code == 500
+        assert "Internal server error" in response.json()["detail"]
+
+
+def test_bot_description_configuration():
+    """Test that bot description is properly configured and used in templates."""
+    from limp.config import Config, DatabaseConfig, LLMConfig, BotConfig
+    from limp.api.main import create_app
+    from fastapi.testclient import TestClient
+    
+    # Test with custom bot description
+    config = Config(
+        database=DatabaseConfig(url="sqlite:///:memory:"),
+        llm=LLMConfig(api_key="test-api-key", model="gpt-4"),
+        bot=BotConfig(
+            name="Test Bot",
+            description="Custom bot description for testing"
+        )
+    )
+    
+    app = create_app(config)
+    client = TestClient(app)
+    
+    # Test main page with custom description
+    response = client.get("/")
+    content = response.content.decode("utf-8")
+    assert "Custom bot description for testing" in content
+    assert "Test Bot" in content
+    
+    # Test manifest with custom description
+    response = client.get("/api/slack/manifest")
+    manifest_content = response.content.decode("utf-8")
+    assert "Custom bot description for testing" in manifest_content
+    assert "Test Bot" in manifest_content
+
+
+def test_bot_description_default():
+    """Test that default bot description is used when not specified."""
+    from limp.config import Config, DatabaseConfig, LLMConfig, BotConfig
+    from limp.api.main import create_app
+    from fastapi.testclient import TestClient
+    
+    # Test with default bot description (empty description should use default)
+    config = Config(
+        database=DatabaseConfig(url="sqlite:///:memory:"),
+        llm=LLMConfig(api_key="test-api-key", model="gpt-4"),
+        bot=BotConfig(name="Test Bot")  # No description specified
+    )
+    
+    app = create_app(config)
+    client = TestClient(app)
+    
+    # Test main page with default description
+    response = client.get("/")
+    content = response.content.decode("utf-8")
+    assert "Provide AI assistance directly in your chat applications." in content
+    
+    # Test manifest with default description
+    response = client.get("/api/slack/manifest")
+    manifest_content = response.content.decode("utf-8")
+    assert "Provide AI assistance directly in your chat applications." in manifest_content

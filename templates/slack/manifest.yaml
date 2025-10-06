@@ -1,10 +1,10 @@
 display_information:
-  name: LLM IM Proxy (LIMP)
-  description: Provide AI assistance directly in your chat applications.
+  name: {{ bot_name }}
+  description: {{ bot_description }}
   background_color: "#474641"
 features:
   bot_user:
-    display_name: LLM IM Proxy (LIMP)
+    display_name: {{ bot_name }}
     always_online: false
 oauth_config:
   redirect_urls:
