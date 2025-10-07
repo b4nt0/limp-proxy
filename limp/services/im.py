@@ -65,6 +65,11 @@ class IMService(ABC):
         """Clean up temporary messages by their identifiers."""
         pass
     
+    @abstractmethod
+    def complete_message(self, channel: str, message_ts: str, success: bool) -> bool:
+        """Complete a message by updating the reaction based on success/failure."""
+        pass
+    
 
 
 class SlackService(IMService):
@@ -313,7 +318,7 @@ class SlackService(IMService):
             return user_id  # Fallback
     
     def acknowledge_message(self, channel: str, message_ts: str) -> bool:
-        """Acknowledge a user's message by adding a green checkmark reaction."""
+        """Acknowledge a user's message by adding a thinking emoji reaction."""
         if not self.bot_token:
             logger.error("No bot token available for Slack reaction")
             return False
@@ -328,7 +333,7 @@ class SlackService(IMService):
                 json={
                     "channel": channel,
                     "timestamp": message_ts,
-                    "name": "white_check_mark"  # Green checkmark emoji
+                    "name": "thinking_face"  # Thinking emoji
                 },
                 timeout=10
             )
@@ -336,7 +341,7 @@ class SlackService(IMService):
             result = response.json()
             
             if result.get("ok"):
-                logger.info(f"Successfully added reaction to Slack message {message_ts}")
+                logger.info(f"Successfully added thinking reaction to Slack message {message_ts}")
                 return True
             else:
                 logger.error(f"Slack API error adding reaction: {result.get('error')}")
@@ -431,6 +436,70 @@ class SlackService(IMService):
                 logger.error(f"Error deleting Slack message {message_ts}: {e}")
         
         return success_count > 0
+    
+    def complete_message(self, channel: str, message_ts: str, success: bool) -> bool:
+        """Complete a message by removing thinking emoji and adding success/failure emoji."""
+        if not self.bot_token:
+            logger.error("No bot token available for Slack message completion")
+            return False
+        
+        try:
+            # First, remove the thinking_face emoji
+            remove_response = requests.post(
+                "https://slack.com/api/reactions.remove",
+                headers={
+                    "Authorization": f"Bearer {self.bot_token}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "channel": channel,
+                    "timestamp": message_ts,
+                    "name": "thinking_face"
+                },
+                timeout=10
+            )
+            remove_response.raise_for_status()
+            remove_result = remove_response.json()
+            
+            # Log the removal attempt (don't fail if thinking emoji wasn't there)
+            if remove_result.get("ok"):
+                logger.info(f"Successfully removed thinking reaction from Slack message {message_ts}")
+            else:
+                logger.debug(f"Thinking reaction removal result: {remove_result.get('error', 'unknown')}")
+            
+            # Add the appropriate completion emoji
+            emoji_name = "white_check_mark" if success else "x"
+            emoji_display = "green checkmark" if success else "red X"
+            
+            add_response = requests.post(
+                "https://slack.com/api/reactions.add",
+                headers={
+                    "Authorization": f"Bearer {self.bot_token}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "channel": channel,
+                    "timestamp": message_ts,
+                    "name": emoji_name
+                },
+                timeout=10
+            )
+            add_response.raise_for_status()
+            add_result = add_response.json()
+            
+            if add_result.get("ok"):
+                logger.info(f"Successfully added {emoji_display} reaction to Slack message {message_ts}")
+                return True
+            else:
+                logger.error(f"Slack API error adding completion reaction: {add_result.get('error')}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"HTTP error completing Slack message: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Error completing Slack message: {e}")
+            return False
 
 
 class TeamsService(IMService):
@@ -573,6 +642,21 @@ class TeamsService(IMService):
             return True
         except Exception as e:
             logger.error(f"Error cleaning up Teams temporary messages: {e}")
+            return False
+    
+    def complete_message(self, channel: str, message_ts: str, success: bool) -> bool:
+        """Complete a message (placeholder implementation for Teams)."""
+        # For Teams, message completion is more complex and depends on the Bot Framework
+        # This is a placeholder implementation
+        try:
+            status_emoji = "✅" if success else "❌"
+            status_text = "completed successfully" if success else "failed"
+            logger.info(f"Teams message {message_ts} {status_text} - would show {status_emoji}")
+            # In a real implementation, you'd use the Teams Bot Framework to update the message
+            # For now, we'll just log the completion status
+            return True
+        except Exception as e:
+            logger.error(f"Error completing Teams message: {e}")
             return False
 
 

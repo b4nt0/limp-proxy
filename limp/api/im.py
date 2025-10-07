@@ -95,6 +95,13 @@ async def handle_user_message(
                     button_metadata
                 )
                 
+                # Complete the message with failure status (authorization required)
+                im_service.complete_message(
+                    message_data["channel"],
+                    message_data.get("timestamp"),
+                    success=False
+                )
+                
                 return {"status": "ok", "action": "authorization_required"}
         
         # Acknowledge the user's message
@@ -139,10 +146,28 @@ async def handle_user_message(
             response.get("metadata")
         )
         
+        # Complete the message with success status
+        im_service.complete_message(
+            message_data["channel"],
+            message_data.get("timestamp"),
+            success=True
+        )
+        
         return {"status": "ok"}
         
     except Exception as e:
         logger.error(f"Message handling error: {e}")
+        
+        # Complete the message with failure status
+        try:
+            im_service.complete_message(
+                message_data["channel"],
+                message_data.get("timestamp"),
+                success=False
+            )
+        except Exception as completion_error:
+            logger.error(f"Error completing message: {completion_error}")
+        
         return {"status": "error", "message": "Failed to process message"}
 
 

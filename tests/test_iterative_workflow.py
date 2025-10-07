@@ -58,6 +58,7 @@ class TestIterativeWorkflow:
         # Mock IM service
         self.mock_im_service = Mock()
         self.mock_im_service.acknowledge_message.return_value = True
+        self.mock_im_service.complete_message.return_value = True
         self.mock_im_service.send_temporary_message.return_value = "temp_msg_123"
         self.mock_im_service.cleanup_temporary_messages.return_value = True
     
