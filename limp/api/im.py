@@ -165,7 +165,7 @@ async def process_llm_workflow(
         system_configs = [system.model_dump() for system in get_config().external_systems]
         tools = tools_service.get_cleaned_tools_for_openai(system_configs)
         
-        # Format messages with system prompts
+        # Format messages with system prompts (no tool-specific prompts yet)
         config = get_config()
         system_prompts = config.bot.system_prompts if config.bot.system_prompts else []
         messages = llm_service.format_messages_with_context(
@@ -224,11 +224,11 @@ async def process_llm_workflow(
                 for tool_call in tool_calls:
                     # Check authorization
                     system_name = tools_service.get_system_name_for_tool(tool_call["function"]["name"], system_configs)
+                    system_config = get_system_config(system_name, system_configs)
                     auth_token = oauth2_service.get_valid_token(user.id, system_name)
                     
                     if not auth_token:
                         # Return authorization URL
-                        system_config = get_system_config(system_name, system_configs)
                         auth_url = oauth2_service.generate_auth_url(user.id, system_config, bot_url)
                         return {
                             "content": f"Please authorize access to {system_name}: {auth_url}",
@@ -238,7 +238,7 @@ async def process_llm_workflow(
                     # Execute tool call
                     tool_result = tools_service.execute_tool_call(
                         tool_call,
-                        get_system_config(system_name, system_configs),
+                        system_config,
                         auth_token.access_token
                     )
                     
@@ -261,6 +261,30 @@ async def process_llm_workflow(
                         "role": "tool",
                         "content": tool_result_content,
                         "tool_call_id": tool_call["id"]
+                    })
+                
+                # Inject tool-specific system prompts for the next LLM call
+                # This provides context about the tool outputs for the next iteration
+                tool_system_prompts = {}
+                for tool_call in tool_calls:
+                    system_name = tools_service.get_system_name_for_tool(tool_call["function"]["name"], system_configs)
+                    system_config = get_system_config(system_name, system_configs)
+                    
+                    # Load OpenAPI spec and generate tool-specific system prompt
+                    try:
+                        openapi_spec = tools_service._get_or_load_spec(system_config["openapi_spec"])
+                        tool_prompts = tools_service.generate_tool_system_prompts(openapi_spec)
+                        tool_name = tool_call["function"]["name"]
+                        if tool_name in tool_prompts:
+                            tool_system_prompts[tool_name] = tool_prompts[tool_name]
+                    except Exception as e:
+                        logger.warning(f"Failed to load tool system prompt for {tool_call['function']['name']}: {e}")
+                
+                # Add all tool system prompts for the next LLM call
+                for tool_name, prompt in tool_system_prompts.items():
+                    messages.append({
+                        "role": "system",
+                        "content": prompt
                     })
                 
                 # Increment iteration counter

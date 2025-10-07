@@ -80,10 +80,8 @@ class ToolsService:
                 if operation.get("description"):
                     description_parts.append(operation["description"])
                 
-                # Add response schema information to description
-                response_info = self._extract_response_info(operation, openapi_spec)
-                if response_info:
-                    description_parts.append(f"Returns: {response_info}")
+                # Skip generic return descriptions to save prompt space
+                # Response schema info will be injected dynamically when tool is called
                 
                 # Add request body information for POST/PUT operations
                 if method.upper() in ["POST", "PUT", "PATCH"]:
@@ -513,6 +511,36 @@ class ToolsService:
         
         return prompts
     
+    def generate_tool_system_prompts(self, openapi_spec: Dict[str, Any]) -> Dict[str, str]:
+        """Generate per-tool system prompts for dynamic injection."""
+        tool_prompts = {}
+        
+        for path, methods in openapi_spec.get("paths", {}).items():
+            for method, operation in methods.items():
+                if method.upper() not in ["GET", "POST", "PUT", "DELETE", "PATCH"]:
+                    continue
+                
+                operation_id = operation.get("operationId")
+                if not operation_id:
+                    continue
+                
+                # Get comprehensive response schema information for this specific tool
+                response_schema = self._get_endpoint_response_schema(operation, openapi_spec)
+                
+                if response_schema:
+                    # Generate detailed schema description including all referenced types
+                    schema_description = self._generate_comprehensive_schema_description(response_schema, openapi_spec)
+                    
+                    if schema_description:
+                        prompt = f"""Tool Output Schema for {operation_id}:
+
+{schema_description}
+
+This describes the complete structure of data returned by the {operation_id} tool, including all nested object types and their properties."""
+                        tool_prompts[operation_id] = prompt
+        
+        return tool_prompts
+    
     def _extract_response_schemas(self, openapi_spec: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         """Extract all unique response schemas from the OpenAPI spec."""
         schemas = {}
@@ -756,4 +784,97 @@ Response: {response_info}"""
             ref_schema = ref_schema.get(part, {})
         
         return ref_schema
+    
+    def _get_endpoint_response_schema(self, operation: Dict[str, Any], openapi_spec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Get the response schema for a specific endpoint."""
+        responses = operation.get("responses", {})
+        
+        # Look for success responses first
+        success_codes = ["200", "201", "202"]
+        for code in success_codes:
+            if code in responses:
+                response = responses[code]
+                content = response.get("content", {})
+                if "application/json" in content:
+                    schema = content["application/json"].get("schema")
+                    if schema:
+                        return schema
+        
+        # Fallback to any response
+        for code, response in responses.items():
+            content = response.get("content", {})
+            if "application/json" in content:
+                schema = content["application/json"].get("schema")
+                if schema:
+                    return schema
+        
+        return None
+    
+    def _generate_comprehensive_schema_description(self, schema: Dict[str, Any], openapi_spec: Dict[str, Any]) -> str:
+        """Generate a comprehensive description of a schema including all referenced types."""
+        if not schema:
+            return ""
+        
+        # Resolve the main schema
+        resolved_schema = self._resolve_schema_reference(schema, openapi_spec)
+        if not resolved_schema:
+            return ""
+        
+        # Collect all referenced schemas that need to be described
+        referenced_schemas = set()
+        self._collect_referenced_schemas(resolved_schema, openapi_spec, referenced_schemas)
+        
+        # Generate description for the main schema
+        main_description = self._describe_schema_structure(resolved_schema, openapi_spec)
+        
+        # Generate descriptions for all referenced schemas
+        referenced_descriptions = []
+        for schema_name in sorted(referenced_schemas):
+            if schema_name in openapi_spec.get("components", {}).get("schemas", {}):
+                ref_schema = openapi_spec["components"]["schemas"][schema_name]
+                ref_description = self._describe_schema_structure(ref_schema, openapi_spec)
+                if ref_description:
+                    referenced_descriptions.append(f"\n{schema_name} Schema:\n{ref_description}")
+        
+        # Combine main description with referenced schemas
+        full_description = main_description
+        if referenced_descriptions:
+            full_description += "\n\nReferenced Types:" + "".join(referenced_descriptions)
+        
+        return full_description
+    
+    def _collect_referenced_schemas(self, schema: Dict[str, Any], openapi_spec: Dict[str, Any], referenced: set) -> None:
+        """Recursively collect all schema references from a schema."""
+        if not schema:
+            return
+        
+        # Handle $ref
+        if "$ref" in schema:
+            ref_path = schema["$ref"]
+            if ref_path.startswith("#/"):
+                schema_name = ref_path.split("/")[-1]
+                referenced.add(schema_name)
+                # Get the referenced schema and collect its references too
+                if "components" in openapi_spec and "schemas" in openapi_spec["components"]:
+                    if schema_name in openapi_spec["components"]["schemas"]:
+                        ref_schema = openapi_spec["components"]["schemas"][schema_name]
+                        self._collect_referenced_schemas(ref_schema, openapi_spec, referenced)
+            return
+        
+        # Handle object properties
+        if schema.get("type") == "object":
+            properties = schema.get("properties", {})
+            for prop_schema in properties.values():
+                self._collect_referenced_schemas(prop_schema, openapi_spec, referenced)
+        
+        # Handle array items
+        if schema.get("type") == "array":
+            items = schema.get("items", {})
+            self._collect_referenced_schemas(items, openapi_spec, referenced)
+        
+        # Handle oneOf, anyOf, allOf
+        for union_type in ["oneOf", "anyOf", "allOf"]:
+            if union_type in schema:
+                for sub_schema in schema[union_type]:
+                    self._collect_referenced_schemas(sub_schema, openapi_spec, referenced)
 

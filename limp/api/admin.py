@@ -199,14 +199,14 @@ async def export_tools_and_prompts(
     system_configs = [target_system.model_dump()]
     tools = tools_service.get_cleaned_tools_for_openai(system_configs)
     
-    # Load spec once and generate prompts from it
+    # Load spec once and generate per-tool system prompts
     openapi_spec = tools_service._get_or_load_spec(target_system.openapi_spec)
-    prompts = tools_service.generate_schema_prompts(openapi_spec)
+    tool_prompts = tools_service.generate_tool_system_prompts(openapi_spec)
     
     return {
         "system": target_system.name,
         "tools": tools,
-        "prompts": prompts
+        "tool_prompts": tool_prompts
     }
 
 

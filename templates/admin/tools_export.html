@@ -44,7 +44,7 @@
             </div>
         </div>
         <div class="card">
-            <div class="card-header">System Prompts</div>
+            <div class="card-header">Per-Tool System Prompts (injected dynamically when tools are called)</div>
             <div class="card-body">
                 <textarea id="promptsOutput" class="form-control" rows="12" readonly></textarea>
             </div>
@@ -92,7 +92,13 @@
             }
             const data = await resp.json();
             document.getElementById('toolsOutput').value = JSON.stringify(data.tools, null, 2);
-            document.getElementById('promptsOutput').value = (data.prompts || []).join('\n\n---\n\n');
+            
+            // Format per-tool system prompts
+            const toolPrompts = data.tool_prompts || {};
+            const promptText = Object.entries(toolPrompts)
+                .map(([toolName, prompt]) => `=== ${toolName} ===\n${prompt}`)
+                .join('\n\n');
+            document.getElementById('promptsOutput').value = promptText;
         } finally {
             hideLoading(button, original);
         }

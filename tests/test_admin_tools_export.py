@@ -3,6 +3,7 @@ Tests for admin tools export page and APIs.
 """
 
 import json
+import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch
 
@@ -47,6 +48,115 @@ def test_tools_export_authorized(test_client: TestClient):
         data = response.json()
         assert data["system"] == "test-system"
         assert isinstance(data["tools"], list)
-        assert isinstance(data["prompts"], list)
+        assert isinstance(data["tool_prompts"], dict)
+        # Check that tool prompts are generated for the operation
+        assert "listItems" in data["tool_prompts"]
+
+
+def test_tool_system_prompts_generation():
+    """Test that ToolsService generates per-tool system prompts correctly."""
+    from limp.services.tools import ToolsService
+    
+    tools_service = ToolsService()
+    
+    # Mock OpenAPI spec
+    openapi_spec = {
+        "openapi": "3.0.0",
+        "paths": {
+            "/users": {
+                "get": {
+                    "operationId": "getUsers",
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "data": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {"type": "string"},
+                                                        "name": {"type": "string"}
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    tool_prompts = tools_service.generate_tool_system_prompts(openapi_spec)
+    
+    assert "getUsers" in tool_prompts
+    assert "Tool Output Schema for getUsers" in tool_prompts["getUsers"]
+    assert "data" in tool_prompts["getUsers"]  # Should describe the response structure
+
+
+def test_tool_system_prompts_injection_logic():
+    """Test that the logic for injecting tool-specific system prompts works correctly."""
+    from limp.services.tools import ToolsService
+    
+    tools_service = ToolsService()
+    
+    # Test that generate_tool_system_prompts returns the expected format with comprehensive schema descriptions
+    openapi_spec = {
+        "openapi": "3.0.0",
+        "paths": {
+            "/users": {
+                "get": {
+                    "operationId": "getUsers",
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "data": {
+                                                "type": "array",
+                                                "items": {"$ref": "#/components/schemas/User"}
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "components": {
+            "schemas": {
+                "User": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer", "description": "User ID"},
+                        "name": {"type": "string", "description": "User name"},
+                        "email": {"type": "string", "description": "User email"}
+                    }
+                }
+            }
+        }
+    }
+    
+    tool_prompts = tools_service.generate_tool_system_prompts(openapi_spec)
+    
+    # Verify the structure of the generated prompt
+    assert "getUsers" in tool_prompts
+    prompt = tool_prompts["getUsers"]
+    assert "Tool Output Schema for getUsers" in prompt
+    assert "data" in prompt  # Should describe the response structure
+    assert "This describes the complete structure of data returned by the getUsers tool" in prompt
+    # Should include referenced schema information
+    assert "User Schema:" in prompt or "Referenced Types:" in prompt
 
 
