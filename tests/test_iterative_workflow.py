@@ -439,7 +439,8 @@ class TestIterativeWorkflow:
         self.llm_service.format_messages_with_context.assert_called_once_with(
             "Current question",
             conversation_history,
-            ["You are a helpful assistant."]
+            ["You are a helpful assistant."],
+            stored_prompts=[]
         )
         
         assert result["content"] == "Based on the context and tool result, here's the answer."

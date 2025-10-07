@@ -3,7 +3,7 @@ Common instant messaging functionality.
 """
 
 from sqlalchemy.orm import Session
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import logging
 from datetime import datetime, timedelta
 
@@ -161,17 +161,27 @@ async def process_llm_workflow(
 ) -> Dict[str, Any]:
     """Process message through LLM workflow with iterative tool calling."""
     try:
-        # Get available tools
-        system_configs = [system.model_dump() for system in get_config().external_systems]
-        tools = tools_service.get_cleaned_tools_for_openai(system_configs)
-        
-        # Format messages with system prompts
+        # Get available tools with optimization for stored tool prompts
         config = get_config()
+        try:
+            system_configs = [system.model_dump() for system in config.external_systems]
+        except (AttributeError, TypeError):
+            # Handle case where external_systems is not iterable (e.g., in tests)
+            system_configs = []
+        tools = get_optimized_tools(system_configs, config, tools_service, llm_service)
+        
+        # Format messages with system prompts and stored prompts
         system_prompts = config.bot.system_prompts if config.bot.system_prompts else []
+        try:
+            stored_prompts = [prompt.model_dump() for prompt in config.llm.stored_prompts] if config.llm.stored_prompts else []
+        except (AttributeError, TypeError):
+            # Handle case where stored_prompts is not iterable (e.g., in tests)
+            stored_prompts = []
         messages = llm_service.format_messages_with_context(
             user_message,
             conversation_history,
-            system_prompts
+            system_prompts,
+            stored_prompts=stored_prompts
         )
         
         # Get max iterations from config
@@ -456,6 +466,48 @@ def get_system_config(system_name: str, system_configs: list) -> dict:
         if config["name"] == system_name:
             return config
     raise ValueError(f"System {system_name} not found")
+
+
+def get_optimized_tools(system_configs: List[Dict[str, Any]], config, tools_service, llm_service) -> List[Dict[str, Any]]:
+    """Get tools with optimization for stored tool prompts."""
+    tools = []
+    
+    # Check for stored tool prompts first
+    stored_tool_prompts = {}
+    if hasattr(config, 'llm') and hasattr(config.llm, 'stored_tools_prompts') and config.llm.stored_tools_prompts:
+        try:
+            stored_tool_prompts = {prompt.external_system_name: prompt.prompt_id for prompt in config.llm.stored_tools_prompts}
+        except (AttributeError, TypeError):
+            # Handle case where stored_tools_prompts is not iterable (e.g., in tests)
+            stored_tool_prompts = {}
+    
+    for system_config in system_configs:
+        system_name = system_config["name"]
+        
+        # If we have a stored tool prompt for this system, use it instead of converting OpenAPI
+        if system_name in stored_tool_prompts:
+            logger.info(f"Using stored tool prompt for system: {system_name} (skipping OpenAPI conversion)")
+            prompt_id = stored_tool_prompts[system_name]
+            
+            # Try to get tools from stored prompt first
+            stored_tools = llm_service.get_stored_tools_prompt(prompt_id)
+            
+            if stored_tools:
+                # Successfully retrieved tools from stored prompt - no OpenAPI conversion needed!
+                logger.info(f"Retrieved {len(stored_tools)} tools from stored prompt for {system_name}")
+                tools.extend(stored_tools)
+            else:
+                # Fallback to regular OpenAPI conversion if stored prompt fails
+                logger.warning(f"Failed to retrieve tools from stored prompt for {system_name}, falling back to OpenAPI conversion")
+                system_tools = tools_service.get_cleaned_tools_for_openai([system_config])
+                tools.extend(system_tools)
+        else:
+            # Use regular OpenAPI conversion (no stored prompt available)
+            logger.info(f"No stored tool prompt for {system_name}, using OpenAPI conversion")
+            system_tools = tools_service.get_cleaned_tools_for_openai([system_config])
+            tools.extend(system_tools)
+    
+    return tools
 
 
 def get_bot_url(config, request=None) -> str:

@@ -756,4 +756,51 @@ Response: {response_info}"""
             ref_schema = ref_schema.get(part, {})
         
         return ref_schema
+    
+    def generate_system_prompts_for_tools(self, tools: List[Dict[str, Any]], system_name: str) -> List[str]:
+        """Generate system prompts for tools that can be used as stored prompts."""
+        prompts = []
+        
+        # Main system prompt for the tools
+        main_prompt = f"""You have access to {system_name} API through the following tools. Use these tools to help users interact with {system_name}.
+
+Available tools:
+"""
+        
+        for tool in tools:
+            function_info = tool["function"]
+            main_prompt += f"- {function_info['name']}: {function_info.get('description', 'No description available')}\n"
+        
+        main_prompt += f"""
+When using these tools:
+1. Always check if the user has authorized access to {system_name} before making tool calls
+2. Provide clear explanations of what you're doing with the tools
+3. Handle errors gracefully and suggest alternatives when possible
+4. If a tool call fails due to authorization, guide the user to authorize access to {system_name}
+"""
+        
+        prompts.append(main_prompt)
+        
+        # Additional specialized prompts for different tool categories
+        api_tools = [tool for tool in tools if "get" in tool["function"]["name"].lower() or "list" in tool["function"]["name"].lower()]
+        if api_tools:
+            read_prompt = f"""For reading data from {system_name}:
+- Use GET/list tools to retrieve information
+- Always ask for specific parameters if the user's request is vague
+- Present data in a clear, organized format
+- If no data is found, suggest what the user might be looking for
+"""
+            prompts.append(read_prompt)
+        
+        write_tools = [tool for tool in tools if "post" in tool["function"]["name"].lower() or "put" in tool["function"]["name"].lower() or "create" in tool["function"]["name"].lower()]
+        if write_tools:
+            write_prompt = f"""For creating or updating data in {system_name}:
+- Use POST/PUT/create tools to modify data
+- Always confirm with the user before making changes
+- Validate required parameters before making the call
+- Provide clear feedback about the results of the operation
+"""
+            prompts.append(write_prompt)
+        
+        return prompts
 

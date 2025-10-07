@@ -12,6 +12,7 @@ import logging
 
 from ..database import get_session
 from ..config import Config, get_config
+from ..services.tools import ToolsService
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ async def get_configuration(
     
     config = get_config()
     return {
-        "database": config.database.dict(),
+        "database": config.database.model_dump(),
         "llm": {
             "provider": config.llm.provider,
             "model": config.llm.model,
@@ -71,10 +72,10 @@ async def get_configuration(
             "temperature": config.llm.temperature,
             "max_iterations": config.llm.max_iterations
         },
-        "external_systems": [system.dict() for system in config.external_systems],
-        "im_platforms": [platform.dict() for platform in config.im_platforms],
-        "admin": config.admin.dict(),
-        "alerts": config.alerts.dict()
+        "external_systems": [system.model_dump() for system in config.external_systems],
+        "im_platforms": [platform.model_dump() for platform in config.im_platforms],
+        "admin": config.admin.model_dump(),
+        "alerts": config.alerts.model_dump()
     }
 
 
@@ -193,6 +194,107 @@ async def revoke_user_token(
     db.commit()
     
     return {"status": "success", "message": "Token revoked"}
+
+
+@admin_router.get("/prompt-conversion", response_class=HTMLResponse)
+async def prompt_conversion_page(request: Request):
+    """Prompt conversion page."""
+    if templates is None:
+        raise HTTPException(status_code=500, detail="Templates not configured")
+    
+    config = get_config()
+    # Filter systems that have OpenAPI specs
+    systems_with_openapi = [
+        system for system in config.external_systems 
+        if system.openapi_spec
+    ]
+    
+    return templates.TemplateResponse("admin/prompt-conversion.html", {
+        "request": request,
+        "title": "Prompt Conversion",
+        "systems": systems_with_openapi
+    })
+
+
+@admin_router.get("/prompt-conversion/api/systems")
+async def get_systems_with_openapi(
+    credentials: HTTPBasicCredentials = Depends(security)
+):
+    """Get external systems that have OpenAPI specs."""
+    # Verify admin credentials
+    if not verify_admin_credentials(credentials):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    config = get_config()
+    systems = [
+        {
+            "name": system.name,
+            "openapi_spec": system.openapi_spec,
+            "base_url": system.base_url
+        }
+        for system in config.external_systems 
+        if system.openapi_spec
+    ]
+    
+    return {"systems": systems}
+
+
+@admin_router.post("/prompt-conversion/api/convert")
+async def convert_openapi_to_prompts(
+    request: Request,
+    credentials: HTTPBasicCredentials = Depends(security)
+):
+    """Convert OpenAPI spec to tools and prompts."""
+    # Verify admin credentials
+    if not verify_admin_credentials(credentials):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Parse form data to get system_name
+    form_data = await request.form()
+    system_name = form_data.get("system_name")
+    
+    if not system_name:
+        raise HTTPException(status_code=422, detail="system_name is required")
+    
+    config = get_config()
+    
+    # Find the system
+    system = None
+    for ext_system in config.external_systems:
+        if ext_system.name == system_name:
+            system = ext_system
+            break
+    
+    if not system:
+        raise HTTPException(status_code=404, detail="System not found")
+    
+    if not system.openapi_spec:
+        raise HTTPException(status_code=400, detail="System has no OpenAPI spec")
+    
+    try:
+        # Use the tools service to convert OpenAPI to tools
+        tools_service = ToolsService()
+        system_config = system.model_dump()
+        
+        # Get tools for this system
+        tools = tools_service.get_cleaned_tools_for_openai([system_config])
+        
+        # Generate system prompts for the tools
+        system_prompts = tools_service.generate_system_prompts_for_tools(tools, system.name)
+        
+        return {
+            "system_name": system.name,
+            "tools": tools,
+            "system_prompts": system_prompts,
+            "instructions": {
+                "tools": "Copy the tools JSON above and create a stored prompt in OpenAI dashboard with these tools.",
+                "system_prompts": "Copy each system prompt above and create separate stored prompts in OpenAI dashboard."
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to convert OpenAPI for system {system_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
 
 
 def verify_admin_credentials(credentials: HTTPBasicCredentials) -> bool:

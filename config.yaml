@@ -19,6 +19,18 @@ llm:
   max_tokens: 4000
   temperature: 0.7
   max_iterations: 8
+  # Stored prompts from OpenAI dashboard
+  stored_prompts:
+    - prompt_id: "prompt_abc123"
+      variables:
+        bot_name: "LIMP"
+        system_name: "{{system_name}}"
+    - prompt_id: "prompt_def456"
+      variables: {}
+  # Stored tool prompts for external systems
+  stored_tools_prompts:
+    - external_system_name: "example-system"
+      prompt_id: "tool_prompt_123"
 
 external_systems:
   - name: "example-system"

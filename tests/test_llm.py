@@ -152,7 +152,7 @@ def test_format_messages_with_context():
     
     # Verify message structure
     assert len(messages) == 4
-    assert messages[0]["role"] == "system"
+    assert messages[0]["role"] == "developer"
     assert messages[0]["content"] == "You are a helpful assistant."
     assert messages[1]["role"] == "user"
     assert messages[1]["content"] == "Hi"
@@ -212,11 +212,11 @@ def test_format_messages_with_multiple_system_prompts():
     
     # Verify message structure
     assert len(messages) == 6  # 3 system prompts + 2 history + 1 current
-    assert messages[0]["role"] == "system"
+    assert messages[0]["role"] == "developer"
     assert messages[0]["content"] == "You are a helpful AI assistant."
-    assert messages[1]["role"] == "system"
+    assert messages[1]["role"] == "developer"
     assert messages[1]["content"] == "Always be polite and professional."
-    assert messages[2]["role"] == "system"
+    assert messages[2]["role"] == "developer"
     assert messages[2]["content"] == "If you need to access external systems, ask the user to authorize access first."
     assert messages[3]["role"] == "user"
     assert messages[3]["content"] == "Hi"
@@ -297,11 +297,11 @@ def test_format_messages_with_schema_prompts():
     
     # Expect: 1 system + 2 schema + 2 history + 1 user = 6
     assert len(messages) == 6
-    assert messages[0]["role"] == "system"
+    assert messages[0]["role"] == "developer"
     assert messages[0]["content"] == "You are a helpful assistant."
-    assert messages[1]["role"] == "system"
+    assert messages[1]["role"] == "developer"
     assert "API Endpoint: getOrganizations" in messages[1]["content"]
-    assert messages[2]["role"] == "system"
+    assert messages[2]["role"] == "developer"
     assert "API Response Schema: Organization" in messages[2]["content"]
     assert messages[3]["role"] == "user"
     assert messages[3]["content"] == "Hi"
@@ -310,9 +310,9 @@ def test_format_messages_with_schema_prompts():
     assert messages[5]["role"] == "user"
     assert messages[5]["content"] == "Hello, how are you?"
     
-    # Ensure schema prompts are included as system messages
-    assert any(m["role"] == "system" and "API Endpoint:" in m["content"] for m in messages)
-    assert any(m["role"] == "system" and "API Response Schema:" in m["content"] for m in messages)
+    # Ensure schema prompts are included as developer messages
+    assert any(m["role"] == "developer" and "API Endpoint:" in m["content"] for m in messages)
+    assert any(m["role"] == "developer" and "API Response Schema:" in m["content"] for m in messages)
 
 
 def test_extract_tool_calls():
