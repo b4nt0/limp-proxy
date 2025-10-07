@@ -21,18 +21,6 @@ class DatabaseConfig(BaseModel):
     echo: bool = Field(default=False)
 
 
-class StoredPromptConfig(BaseModel):
-    """Stored prompt configuration."""
-    prompt_id: str = Field(description="OpenAI stored prompt identifier")
-    variables: Dict[str, str] = Field(default_factory=dict, description="Variables to substitute in the prompt")
-
-
-class StoredToolPromptConfig(BaseModel):
-    """Stored tool prompt configuration for external systems."""
-    external_system_name: str = Field(description="Name of the external system")
-    prompt_id: str = Field(description="OpenAI stored prompt identifier for tools")
-
-
 class LLMConfig(BaseModel):
     """LLM configuration."""
     provider: str = Field(default="openai")
@@ -42,8 +30,6 @@ class LLMConfig(BaseModel):
     max_tokens: int = Field(default=4000)
     temperature: float = Field(default=0.7)
     max_iterations: int = Field(default=8, description="Maximum number of tool calling iterations")
-    stored_prompts: List[StoredPromptConfig] = Field(default_factory=list, description="Stored prompts from OpenAI")
-    stored_tools_prompts: List[StoredToolPromptConfig] = Field(default_factory=list, description="Stored tool prompts for external systems")
 
 
 class OAuth2Config(BaseModel):

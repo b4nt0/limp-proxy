@@ -112,19 +112,11 @@
                         </a>
                     </div>
                     <div class="col-md-3 mb-3">
-                        <a href="/admin/prompt-conversion" class="btn btn-outline-success w-100" id="prompt-conversion-btn" style="display: none;">
-                            <i class="fas fa-magic me-2"></i>
-                            Prompt Conversion
-                        </a>
-                    </div>
-                    <div class="col-md-3 mb-3">
                         <button class="btn btn-outline-info w-100" onclick="testSystemHealth()">
                             <i class="fas fa-heartbeat me-2"></i>
                             Health Check
                         </button>
                     </div>
-                </div>
-                <div class="row">
                     <div class="col-md-3 mb-3">
                         <button class="btn btn-outline-warning w-100" onclick="viewLogs()">
                             <i class="fas fa-file-alt me-2"></i>
@@ -216,19 +208,11 @@
                 document.getElementById('user-count').textContent = usersData.users ? usersData.users.length : 0;
             }
             
-            // Load configuration for platform count and check for OpenAPI systems
+            // Load configuration for platform count
             const configResponse = await fetch('/admin/config/api');
             if (configResponse.ok) {
                 const configData = await configResponse.json();
                 document.getElementById('platform-count').textContent = configData.im_platforms ? configData.im_platforms.length : 0;
-                
-                // Show prompt conversion button if there are external systems with OpenAPI specs
-                const hasOpenAPISystems = configData.external_systems && 
-                    configData.external_systems.some(system => system.openapi_spec);
-                
-                if (hasOpenAPISystems) {
-                    document.getElementById('prompt-conversion-btn').style.display = 'block';
-                }
             }
             
             // Update timestamps

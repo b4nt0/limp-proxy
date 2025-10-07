@@ -61,83 +61,25 @@ class LLMService:
             logger.error(f"LLM request failed: {e}")
             raise
     
-    def get_stored_prompt(self, prompt_id: str, variables: Dict[str, str] = None) -> str:
-        """Retrieve a stored prompt from OpenAI."""
-        try:
-            # Note: This is a placeholder implementation
-            # In a real implementation, you would use:
-            # response = self.client.prompts.retrieve(prompt_id, variables=variables or {})
-            # return response.content
-            logger.warning(f"Stored prompt retrieval not implemented yet for prompt_id: {prompt_id}")
-            return f"[Stored prompt: {prompt_id}]"
-        except Exception as e:
-            logger.error(f"Failed to retrieve stored prompt {prompt_id}: {e}")
-            return f"[Error retrieving stored prompt: {prompt_id}]"
-    
-    def get_stored_tools_prompt(self, prompt_id: str, variables: Dict[str, str] = None) -> List[Dict[str, Any]]:
-        """Retrieve stored tools from a stored prompt."""
-        try:
-            # Note: This is a placeholder implementation
-            # In a real implementation, you would:
-            # 1. Retrieve the stored prompt from OpenAI
-            # 2. Parse the tools from the prompt content
-            # 3. Return the tools in OpenAI format
-            
-            # For demonstration purposes, return mock tools to show the optimization works
-            if prompt_id.startswith("tool_prompt_"):
-                logger.info(f"Retrieving tools from stored prompt: {prompt_id}")
-                # Return mock tools to demonstrate the optimization
-                return [
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": f"stored_tool_from_{prompt_id}",
-                            "description": f"Tool retrieved from stored prompt {prompt_id}",
-                            "parameters": {
-                                "type": "object",
-                                "properties": {
-                                    "param1": {"type": "string", "description": "Parameter from stored prompt"}
-                                }
-                            }
-                        }
-                    }
-                ]
-            else:
-                logger.warning(f"Stored tools prompt retrieval not implemented yet for prompt_id: {prompt_id}")
-                return []  # Return empty tools list for unknown prompts
-        except Exception as e:
-            logger.error(f"Failed to retrieve stored tools prompt {prompt_id}: {e}")
-            return []
-
     def format_messages_with_context(
         self,
         user_message: str,
         conversation_history: List[Dict[str, str]],
         system_prompts: Optional[List[str]] = None,
-        schema_prompts: Optional[List[str]] = None,
-        stored_prompts: Optional[List[Dict[str, Any]]] = None
+        schema_prompts: Optional[List[str]] = None
     ) -> List[Dict[str, str]]:
         """Format messages with conversation context."""
         messages = []
         
-        # Add stored prompts first (if available)
-        if stored_prompts:
-            for stored_prompt in stored_prompts:
-                prompt_content = self.get_stored_prompt(
-                    stored_prompt["prompt_id"], 
-                    stored_prompt.get("variables", {})
-                )
-                messages.append({"role": "developer", "content": prompt_content})
-        
-        # Add system prompts (fallback or additional)
+        # Add system prompts first
         if system_prompts:
             for system_prompt in system_prompts:
-                messages.append({"role": "developer", "content": system_prompt})
+                messages.append({"role": "system", "content": system_prompt})
         
         # Add schema prompts for API context
         if schema_prompts:
             for schema_prompt in schema_prompts:
-                messages.append({"role": "developer", "content": schema_prompt})
+                messages.append({"role": "system", "content": schema_prompt})
         
         # Add conversation history
         messages.extend(conversation_history)
