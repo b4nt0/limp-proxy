@@ -12,6 +12,7 @@ import logging
 
 from ..database import get_session
 from ..config import Config, get_config
+from ..services.tools import ToolsService
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,18 @@ async def get_configuration_html(request: Request):
     return templates.TemplateResponse("admin/config.html", {
         "request": request,
         "title": "Configuration"
+    })
+
+
+@admin_router.get("/tools", response_class=HTMLResponse)
+async def export_tools_page(request: Request):
+    """Tools export page."""
+    if templates is None:
+        raise HTTPException(status_code=500, detail="Templates not configured")
+    
+    return templates.TemplateResponse("admin/tools_export.html", {
+        "request": request,
+        "title": "Export Tools & Prompts"
     })
 
 
@@ -135,6 +148,65 @@ async def list_users(
             }
             for user in users
         ]
+    }
+
+
+@admin_router.get("/tools/api/systems")
+async def list_external_systems(
+    credentials: HTTPBasicCredentials = Depends(security),
+    db: Session = Depends(get_session)
+):
+    """List external systems that have OpenAPI specs configured."""
+    # Verify admin credentials
+    if not verify_admin_credentials(credentials):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    config = get_config()
+    systems = []
+    for system in config.external_systems:
+        if system.openapi_spec:
+            systems.append({
+                "name": system.name,
+                "openapi_spec": system.openapi_spec,
+                "base_url": system.base_url
+            })
+    return {"systems": systems}
+
+
+@admin_router.get("/tools/api/export")
+async def export_tools_and_prompts(
+    system: str,
+    credentials: HTTPBasicCredentials = Depends(security),
+    db: Session = Depends(get_session)
+):
+    """Export tools and prompts for a given external system."""
+    # Verify admin credentials
+    if not verify_admin_credentials(credentials):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    config = get_config()
+    # Find the system config by name
+    target_system = None
+    for s in config.external_systems:
+        if s.name == system:
+            target_system = s
+            break
+    if not target_system:
+        raise HTTPException(status_code=404, detail="System not found")
+    
+    # Use the same generation logic as runtime
+    tools_service = ToolsService()
+    system_configs = [target_system.model_dump()]
+    tools = tools_service.get_cleaned_tools_for_openai(system_configs)
+    
+    # Load spec once and generate prompts from it
+    openapi_spec = tools_service._get_or_load_spec(target_system.openapi_spec)
+    prompts = tools_service.generate_schema_prompts(openapi_spec)
+    
+    return {
+        "system": target_system.name,
+        "tools": tools,
+        "prompts": prompts
     }
 
 

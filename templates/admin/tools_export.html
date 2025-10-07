@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Export Tools & Prompts - LIMP{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h3 mb-0">
+                <i class="fas fa-file-export me-2"></i>
+                Export Tools & Prompts
+            </h1>
+            <div>
+                <a href="/admin/" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-arrow-left me-1"></i>
+                    Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">Select System</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="systemSelect" class="form-label">External System</label>
+                    <select id="systemSelect" class="form-select"></select>
+                </div>
+                <button id="exportBtn" class="btn btn-primary w-100">
+                    <i class="fas fa-download me-2"></i>
+                    Export Tools
+                </button>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header">Tools (copy-pastable JSON)</div>
+            <div class="card-body">
+                <textarea id="toolsOutput" class="form-control" rows="12" readonly></textarea>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">System Prompts</div>
+            <div class="card-body">
+                <textarea id="promptsOutput" class="form-control" rows="12" readonly></textarea>
+            </div>
+        </div>
+    </div>
+    
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    async function loadSystems() {
+        const select = document.getElementById('systemSelect');
+        select.innerHTML = '<option>Loading...</option>';
+        try {
+            const resp = await fetch('/admin/tools/api/systems');
+            if (!resp.ok) {
+                select.innerHTML = '<option value="">Failed to load systems</option>';
+                return;
+            }
+            const data = await resp.json();
+            select.innerHTML = '';
+            data.systems.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.name;
+                opt.textContent = s.name;
+                select.appendChild(opt);
+            });
+        } catch (e) {
+            select.innerHTML = '<option value="">Error loading systems</option>';
+        }
+    }
+
+    async function exportTools() {
+        const select = document.getElementById('systemSelect');
+        const system = select.value;
+        if (!system) return;
+        const button = document.getElementById('exportBtn');
+        const original = showLoading(button);
+        try {
+            const resp = await fetch(`/admin/tools/api/export?system=${encodeURIComponent(system)}`);
+            if (!resp.ok) {
+                alert('Failed to export');
+                return;
+            }
+            const data = await resp.json();
+            document.getElementById('toolsOutput').value = JSON.stringify(data.tools, null, 2);
+            document.getElementById('promptsOutput').value = (data.prompts || []).join('\n\n---\n\n');
+        } finally {
+            hideLoading(button, original);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        loadSystems();
+        document.getElementById('exportBtn').addEventListener('click', exportTools);
+    });
+</script>
+{% endblock %}
+
+
