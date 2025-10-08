@@ -156,7 +156,14 @@ def test_execute_tool_call_success():
             "/users": {
                 "get": {
                     "operationId": "getUsers",
-                    "description": "Get all users"
+                    "description": "Get all users",
+                    "parameters": [
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "schema": {"type": "integer"}
+                        }
+                    ]
                 }
             }
         }
@@ -209,7 +216,21 @@ def test_execute_tool_call_post():
             "/users": {
                 "post": {
                     "operationId": "createUser",
-                    "description": "Create a new user"
+                    "description": "Create a new user",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "string"},
+                                        "email": {"type": "string"}
+                                    },
+                                    "required": ["name", "email"]
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -248,6 +269,7 @@ def test_execute_tool_call_post():
         mock_post.assert_called_once_with(
             "https://example.com/api/users",
             json={"name": "John", "email": "john@example.com"},
+            params={},
             headers={"Content-Type": "application/json", "Authorization": "Bearer test_token"}
         )
 
@@ -647,3 +669,254 @@ def test_convert_parameters_with_enhanced_metadata():
     assert "ID of the portfolio." in workspace_id["description"]
     assert "(URL path parameter)" in workspace_id["description"]
     assert "workspace_id" in result["required"]
+
+
+def test_execute_tool_call_with_path_parameters():
+    """Test that path parameters are correctly substituted in URLs (regression test for bug fix)."""
+    service = ToolsService()
+    
+    # Mock OpenAPI spec with path parameters
+    openapi_spec = {
+        "paths": {
+            "/api/v1/organizations/{organization_id}/combo_cube": {
+                "get": {
+                    "operationId": "getComboCube",
+                    "description": "Get and compare resource capacity and demand information per date.",
+                    "parameters": [
+                        {
+                            "name": "organization_id",
+                            "in": "path",
+                            "required": True,
+                            "description": "ID of the organization.",
+                            "schema": {"type": "integer"}
+                        },
+                        {
+                            "name": "force_sync",
+                            "in": "query",
+                            "description": "Whether to force a synchronous response.",
+                            "schema": {"type": "boolean"}
+                        },
+                        {
+                            "name": "per_time_period",
+                            "in": "query",
+                            "required": True,
+                            "description": "Group results by time period.",
+                            "schema": {"type": "string"}
+                        },
+                        {
+                            "name": "dt_from",
+                            "in": "query",
+                            "description": "Start date of the interval.",
+                            "schema": {"type": "string", "format": "date"}
+                        },
+                        {
+                            "name": "dt_to",
+                            "in": "query",
+                            "description": "End date of the interval.",
+                            "schema": {"type": "string", "format": "date"}
+                        }
+                    ]
+                }
+            }
+        }
+    }
+    
+    system_config = {
+        "name": "test_system",
+        "openapi_spec": "https://example.com/api/openapi.json",
+        "base_url": "http://localhost:5000"
+    }
+    
+    tool_call = {
+        "function": {
+            "name": "getComboCube",
+            "arguments": json.dumps({
+                "organization_id": 4884,
+                "force_sync": True,
+                "per_time_period": "month",
+                "dt_from": "2025-11-01",
+                "dt_to": "2025-11-30"
+            })
+        }
+    }
+    
+    with patch('requests.get') as mock_get:
+        mock_response = Mock()
+        mock_response.json.return_value = {"data": []}
+        mock_response.status_code = 200
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+        
+        # Mock the load_openapi_spec method to return our test spec
+        with patch.object(service, 'load_openapi_spec', return_value=openapi_spec):
+            result = service.execute_tool_call(tool_call, system_config, "test_token")
+        
+        # Verify result
+        assert result["success"] is True
+        assert result["data"] == {"data": []}
+        assert result["status_code"] == 200
+        
+        # Verify request was made with correct URL (path parameter substituted)
+        expected_url = "http://localhost:5000/api/v1/organizations/4884/combo_cube"
+        expected_params = {
+            "force_sync": True,
+            "per_time_period": "month",
+            "dt_from": "2025-11-01",
+            "dt_to": "2025-11-30"
+        }
+        
+        mock_get.assert_called_once_with(
+            expected_url,
+            params=expected_params,
+            headers={"Content-Type": "application/json", "Authorization": "Bearer test_token"}
+        )
+
+
+def test_execute_tool_call_with_path_parameters_post():
+    """Test that path parameters work correctly with POST requests."""
+    service = ToolsService()
+    
+    # Mock OpenAPI spec with path parameters and request body
+    openapi_spec = {
+        "paths": {
+            "/api/v1/organizations/{organization_id}/users": {
+                "post": {
+                    "operationId": "createUser",
+                    "description": "Create a new user in the organization.",
+                    "parameters": [
+                        {
+                            "name": "organization_id",
+                            "in": "path",
+                            "required": True,
+                            "description": "ID of the organization.",
+                            "schema": {"type": "integer"}
+                        },
+                        {
+                            "name": "notify",
+                            "in": "query",
+                            "description": "Whether to send notification email.",
+                            "schema": {"type": "boolean"}
+                        }
+                    ],
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "string"},
+                                        "email": {"type": "string"}
+                                    },
+                                    "required": ["name", "email"]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    system_config = {
+        "name": "test_system",
+        "openapi_spec": "https://example.com/api/openapi.json",
+        "base_url": "http://localhost:5000"
+    }
+    
+    tool_call = {
+        "function": {
+            "name": "createUser",
+            "arguments": json.dumps({
+                "organization_id": 123,
+                "notify": True,
+                "name": "John Doe",
+                "email": "john@example.com"
+            })
+        }
+    }
+    
+    with patch('requests.post') as mock_post:
+        mock_response = Mock()
+        mock_response.json.return_value = {"id": 1, "name": "John Doe"}
+        mock_response.status_code = 201
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+        
+        # Mock the load_openapi_spec method to return our test spec
+        with patch.object(service, 'load_openapi_spec', return_value=openapi_spec):
+            result = service.execute_tool_call(tool_call, system_config, "test_token")
+        
+        # Verify result
+        assert result["success"] is True
+        assert result["data"] == {"id": 1, "name": "John Doe"}
+        assert result["status_code"] == 201
+        
+        # Verify request was made with correct URL and separated parameters
+        expected_url = "http://localhost:5000/api/v1/organizations/123/users"
+        expected_params = {"notify": True}
+        expected_json = {"name": "John Doe", "email": "john@example.com"}
+        
+        mock_post.assert_called_once_with(
+            expected_url,
+            json=expected_json,
+            params=expected_params,
+            headers={"Content-Type": "application/json", "Authorization": "Bearer test_token"}
+        )
+
+
+def test_execute_tool_call_path_parameter_missing():
+    """Test that missing required path parameters are handled gracefully."""
+    service = ToolsService()
+    
+    # Mock OpenAPI spec with required path parameter
+    openapi_spec = {
+        "paths": {
+            "/api/v1/organizations/{organization_id}/combo_cube": {
+                "get": {
+                    "operationId": "getComboCube",
+                    "parameters": [
+                        {
+                            "name": "organization_id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "integer"}
+                        }
+                    ]
+                }
+            }
+        }
+    }
+    
+    system_config = {
+        "name": "test_system",
+        "openapi_spec": "https://example.com/api/openapi.json",
+        "base_url": "http://localhost:5000"
+    }
+    
+    # Tool call missing the required path parameter
+    tool_call = {
+        "function": {
+            "name": "getComboCube",
+            "arguments": json.dumps({
+                "force_sync": True
+            })
+        }
+    }
+    
+    with patch('requests.get') as mock_get:
+        mock_response = Mock()
+        mock_response.json.return_value = {"data": []}
+        mock_response.status_code = 200
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+        
+        # Mock the load_openapi_spec method to return our test spec
+        with patch.object(service, 'load_openapi_spec', return_value=openapi_spec):
+            result = service.execute_tool_call(tool_call, system_config, "test_token")
+        
+        # The request should still be made, but with unsubstituted path parameter
+        # This tests the current behavior - the URL will contain {organization_id}
+        mock_get.assert_called_once()
+        call_args = mock_get.call_args
+        url = call_args[0][0]  # First positional argument
+        assert "{organization_id}" in url  # Path parameter not substituted

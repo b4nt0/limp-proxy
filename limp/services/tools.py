@@ -145,23 +145,52 @@ class ToolsService:
             
             # Build request
             method = operation["method"].upper()
-            url = f"{system_config['base_url']}{operation['path']}"
+            path = operation["path"]
+            
+            # Separate path parameters from query parameters
+            path_params = {}
+            query_params = {}
+            
+            # Get parameter definitions from the operation
+            operation_params = operation["operation"].get("parameters", [])
+            for param in operation_params:
+                param_name = param["name"]
+                param_in = param.get("in", "query")
+                
+                if param_name in arguments:
+                    if param_in == "path":
+                        path_params[param_name] = arguments[param_name]
+                    else:
+                        query_params[param_name] = arguments[param_name]
+            
+            # Substitute path parameters in the URL
+            for param_name, param_value in path_params.items():
+                path = path.replace(f"{{{param_name}}}", str(param_value))
+            
+            # Build final URL
+            url = f"{system_config['base_url']}{path}"
             
             headers = {"Content-Type": "application/json"}
             if auth_token:
                 headers["Authorization"] = f"Bearer {auth_token}"
 
-            logger.info(f"Executing tool call: {method} {url} with headers: {headers} and arguments: {arguments}")
+            logger.info(f"Executing tool call: {method} {url} with headers: {headers}, path_params: {path_params}, query_params: {query_params}")
             
             # Execute request
             if method == "GET":
-                response = requests.get(url, params=arguments, headers=headers)
+                response = requests.get(url, params=query_params, headers=headers)
             elif method == "POST":
-                response = requests.post(url, json=arguments, headers=headers)
+                # For POST, send remaining arguments as JSON body (excluding path and query params)
+                body_params = {k: v for k, v in arguments.items() 
+                              if k not in path_params and k not in query_params}
+                response = requests.post(url, json=body_params, params=query_params, headers=headers)
             elif method == "PUT":
-                response = requests.put(url, json=arguments, headers=headers)
+                # For PUT, send remaining arguments as JSON body (excluding path and query params)
+                body_params = {k: v for k, v in arguments.items() 
+                              if k not in path_params and k not in query_params}
+                response = requests.put(url, json=body_params, params=query_params, headers=headers)
             elif method == "DELETE":
-                response = requests.delete(url, headers=headers)
+                response = requests.delete(url, params=query_params, headers=headers)
             else:
                 return {"error": f"Unsupported method: {method}"}
             
