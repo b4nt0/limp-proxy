@@ -3,6 +3,7 @@
 bot:
   name: "LIMP"
   url: ""
+  debug: false
   system_prompts:
     - "You are a helpful AI assistant that can help users interact with external systems."
     - "Always be polite and professional in your responses."

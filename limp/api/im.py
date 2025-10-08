@@ -224,10 +224,21 @@ async def process_llm_workflow(
                         system_name = tools_service.get_system_name_for_tool(first_tool_name, system_configs)
                         tool_description = tools_service.get_tool_description_summary(first_tool_name, system_configs)
                     
-                    progress_content = f"[{iteration + 1}. Talking to {system_name}. {tool_description}]"
+                    progress_content = f"{iteration + 1}. Talking to {system_name}. {tool_description}"
                     temp_message_id = im_service.send_temporary_message(channel, progress_content, original_message_ts)
                     if temp_message_id:
                         temporary_message_ids.append(temp_message_id)
+                    
+                    # Add debug messages if debug mode is enabled
+                    if config.bot.debug:
+                        for tool_call in tool_calls:
+                            # Debug message for tool name and parameters
+                            tool_name = tool_call["function"]["name"]
+                            tool_args = tool_call["function"]["arguments"]
+                            debug_content = f"🔧 Tool: {tool_name}\n📝 Args: {tool_args}"
+                            debug_temp_id = im_service.send_temporary_message(channel, debug_content, original_message_ts)
+                            if debug_temp_id:
+                                temporary_message_ids.append(debug_temp_id)
                 
                 # Add the assistant's response with tool calls to the messages
                 assistant_message = {
@@ -289,6 +300,14 @@ async def process_llm_workflow(
                         "content": tool_result_content,
                         "tool_call_id": tool_call["id"]
                     })
+                    
+                    # Add debug message for tool response if debug mode is enabled
+                    if config.bot.debug:
+                        tool_name = tool_call["function"]["name"]
+                        response_content = f"📤 Response from {tool_name}:\n{str(tool_result)}"
+                        response_temp_id = im_service.send_temporary_message(channel, response_content, original_message_ts)
+                        if response_temp_id:
+                            temporary_message_ids.append(response_temp_id)
                 
                 # Inject tool-specific system prompts for the next LLM call
                 # This provides context about the tool outputs for the next iteration
@@ -319,13 +338,13 @@ async def process_llm_workflow(
                 
             else:
                 # No tool calls, clean up temporary messages and return the response
-                if temporary_message_ids:
+                if temporary_message_ids and not config.bot.debug:
                     im_service.cleanup_temporary_messages(channel, temporary_message_ids)
                 return {"content": response["content"]}
         
         # If we've exceeded max iterations, clean up temporary messages and send a final prompt
         logger.warning(f"Maximum iterations ({max_iterations}) exceeded. Sending final prompt.")
-        if temporary_message_ids:
+        if temporary_message_ids and not config.bot.debug:
             im_service.cleanup_temporary_messages(channel, temporary_message_ids)
         
         final_prompt = "You have reached the maximum number of tool calling iterations. Please provide your best response based on the information you have gathered so far, without calling any more tools."
@@ -337,8 +356,8 @@ async def process_llm_workflow(
         
     except Exception as e:
         logger.error(f"LLM workflow error: {e}")
-        # Clean up any temporary messages on error
-        if 'temporary_message_ids' in locals() and temporary_message_ids:
+        # Clean up any temporary messages on error (unless debug mode is enabled)
+        if 'temporary_message_ids' in locals() and temporary_message_ids and not config.bot.debug:
             im_service.cleanup_temporary_messages(channel, temporary_message_ids)
         return {
             "content": llm_service.get_error_message(e),
