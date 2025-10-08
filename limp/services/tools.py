@@ -72,7 +72,7 @@ class ToolsService:
                 # Build comprehensive description
                 description_parts = []
                 
-                # Add summary if available
+                # Add summary if available (separated with newline for easy extraction)
                 if operation.get("summary"):
                     description_parts.append(operation["summary"])
                 
@@ -94,8 +94,15 @@ class ToolsService:
                     tags_str = ", ".join(operation["tags"])
                     description_parts.append(f"Tags: {tags_str}")
                 
-                # Combine all description parts
-                full_description = "\n\n".join(description_parts) if description_parts else ""
+                # Combine all description parts with summary separated by newline
+                if description_parts:
+                    # First part (summary) separated by newline, rest by double newline
+                    if len(description_parts) == 1:
+                        full_description = description_parts[0]
+                    else:
+                        full_description = description_parts[0] + "\n" + "\n\n".join(description_parts[1:])
+                else:
+                    full_description = ""
                 
                 # Convert parameters including request body
                 parameters = self._convert_parameters(operation.get("parameters", []))
@@ -491,6 +498,24 @@ class ToolsService:
         
         # Fallback to first system if not found
         return system_configs[0]["name"] if system_configs else "default"
+    
+    def get_tool_description_summary(self, tool_name: str, system_configs: List[Dict[str, Any]]) -> str:
+        """Get the summary part (up to first newline) of a tool's description."""
+        # Get all tools with system information
+        all_tools = self.get_available_tools(system_configs)
+        
+        # Find the tool and return its description summary
+        for tool in all_tools:
+            if tool["function"]["name"] == tool_name:
+                description = tool["function"].get("description", "")
+                # Extract up to first newline
+                first_newline = description.find("\n")
+                if first_newline != -1:
+                    return description[:first_newline]
+                return description
+        
+        # Fallback if tool not found
+        return "Processing request"
     
     def generate_schema_prompts(self, openapi_spec: Dict[str, Any]) -> List[str]:
         """Generate system prompts from OpenAPI response schemas."""

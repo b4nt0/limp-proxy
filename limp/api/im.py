@@ -216,13 +216,15 @@ async def process_llm_workflow(
                 
                 # Send temporary progress message for non-final iterations
                 if iteration < max_iterations - 1:
-                    # Get the system name for the first tool call to show what we're talking to
+                    # Get the system name and tool description for the first tool call
                     system_name = "External System"
+                    tool_description = "Processing request"
                     if tool_calls:
                         first_tool_name = tool_calls[0]["function"]["name"]
                         system_name = tools_service.get_system_name_for_tool(first_tool_name, system_configs)
+                        tool_description = tools_service.get_tool_description_summary(first_tool_name, system_configs)
                     
-                    progress_content = f"Processing... (iteration {iteration + 1}, talking to {system_name})"
+                    progress_content = f"[{iteration + 1}. Talking to {system_name}. {tool_description}]"
                     temp_message_id = im_service.send_temporary_message(channel, progress_content, original_message_ts)
                     if temp_message_id:
                         temporary_message_ids.append(temp_message_id)
