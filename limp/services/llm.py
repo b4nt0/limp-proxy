@@ -84,8 +84,9 @@ class LLMService:
         # Add conversation history
         messages.extend(conversation_history)
         
-        # Add current user message
-        messages.append({"role": "user", "content": user_message})
+        # Add current user message if provided and not empty
+        if user_message:
+            messages.append({"role": "user", "content": user_message})
         
         return messages
     

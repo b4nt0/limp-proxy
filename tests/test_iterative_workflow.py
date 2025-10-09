@@ -93,12 +93,18 @@ class TestIterativeWorkflow:
         self.llm_service.chat_completion.assert_called_once()
     
     @pytest.mark.asyncio
+    @patch('limp.services.context.ContextManager')
     @patch('limp.api.im.get_system_config')
     @patch('limp.api.im.get_config')
-    async def test_single_tool_call_iteration(self, mock_get_config, mock_get_system_config):
+    async def test_single_tool_call_iteration(self, mock_get_config, mock_get_system_config, mock_context_manager):
         """Test workflow with a single tool call iteration."""
         mock_get_config.return_value = self.config
         mock_get_system_config.return_value = self.mock_system_config
+        
+        # Mock ContextManager
+        mock_context_instance = Mock()
+        mock_context_instance.append_context_usage_to_message.return_value = "1. Talking to Test System. Processing request. 25% context"
+        mock_context_manager.return_value = mock_context_instance
         
         # Mock tool call response
         mock_tool_call = Mock()
@@ -147,12 +153,18 @@ class TestIterativeWorkflow:
         assert self.llm_service.chat_completion.call_count == 2
     
     @pytest.mark.asyncio
+    @patch('limp.services.context.ContextManager')
     @patch('limp.api.im.get_system_config')
     @patch('limp.api.im.get_config')
-    async def test_multiple_tool_call_iterations(self, mock_get_config, mock_get_system_config):
+    async def test_multiple_tool_call_iterations(self, mock_get_config, mock_get_system_config, mock_context_manager):
         """Test workflow with multiple tool call iterations."""
         mock_get_config.return_value = self.config
         mock_get_system_config.return_value = self.mock_system_config
+        
+        # Mock ContextManager
+        mock_context_instance = Mock()
+        mock_context_instance.append_context_usage_to_message.return_value = "1. Talking to Test System. Processing request. 25% context"
+        mock_context_manager.return_value = mock_context_instance
         
         # Mock tool call
         mock_tool_call = Mock()
@@ -205,12 +217,18 @@ class TestIterativeWorkflow:
         assert self.llm_service.chat_completion.call_count == 3
     
     @pytest.mark.asyncio
+    @patch('limp.services.context.ContextManager')
     @patch('limp.api.im.get_system_config')
     @patch('limp.api.im.get_config')
-    async def test_max_iterations_exceeded(self, mock_get_config, mock_get_system_config):
+    async def test_max_iterations_exceeded(self, mock_get_config, mock_get_system_config, mock_context_manager):
         """Test workflow when max iterations are exceeded."""
         mock_get_config.return_value = self.config
         mock_get_system_config.return_value = self.mock_system_config
+        
+        # Mock ContextManager
+        mock_context_instance = Mock()
+        mock_context_instance.append_context_usage_to_message.return_value = "1. Talking to Test System. Processing request. 25% context"
+        mock_context_manager.return_value = mock_context_instance
         
         # Mock tool call
         mock_tool_call = Mock()
@@ -267,12 +285,18 @@ class TestIterativeWorkflow:
         assert self.llm_service.chat_completion.call_count == 4  # 3 iterations + 1 final call
     
     @pytest.mark.asyncio
+    @patch('limp.services.context.ContextManager')
     @patch('limp.api.im.get_system_config')
     @patch('limp.api.im.get_config')
-    async def test_authorization_required_during_iteration(self, mock_get_config, mock_get_system_config):
+    async def test_authorization_required_during_iteration(self, mock_get_config, mock_get_system_config, mock_context_manager):
         """Test that authorization requirement stops the iteration and returns auth URL."""
         mock_get_config.return_value = self.config
         mock_get_system_config.return_value = self.mock_system_config
+        
+        # Mock ContextManager
+        mock_context_instance = Mock()
+        mock_context_instance.append_context_usage_to_message.return_value = "1. Talking to Test System. Processing request. 25% context"
+        mock_context_manager.return_value = mock_context_instance
         
         # Mock tool call
         mock_tool_call = Mock()
@@ -320,12 +344,18 @@ class TestIterativeWorkflow:
         assert result["metadata"]["auth_url"] == "http://localhost:8000/auth"
     
     @pytest.mark.asyncio
+    @patch('limp.services.context.ContextManager')
     @patch('limp.api.im.get_system_config')
     @patch('limp.api.im.get_config')
-    async def test_tool_call_failure_handling(self, mock_get_config, mock_get_system_config):
+    async def test_tool_call_failure_handling(self, mock_get_config, mock_get_system_config, mock_context_manager):
         """Test handling of tool call failures during iteration."""
         mock_get_config.return_value = self.config
         mock_get_system_config.return_value = self.mock_system_config
+        
+        # Mock ContextManager
+        mock_context_instance = Mock()
+        mock_context_instance.append_context_usage_to_message.return_value = "1. Talking to Test System. Processing request. 25% context"
+        mock_context_manager.return_value = mock_context_instance
         
         # Mock tool call
         mock_tool_call = Mock()
@@ -381,12 +411,18 @@ class TestIterativeWorkflow:
         assert self.llm_service.chat_completion.call_count == 2
     
     @pytest.mark.asyncio
+    @patch('limp.services.context.ContextManager')
     @patch('limp.api.im.get_system_config')
     @patch('limp.api.im.get_config')
-    async def test_conversation_history_preserved(self, mock_get_config, mock_get_system_config):
+    async def test_conversation_history_preserved(self, mock_get_config, mock_get_system_config, mock_context_manager):
         """Test that conversation history is preserved through iterations."""
         mock_get_config.return_value = self.config
         mock_get_system_config.return_value = self.mock_system_config
+        
+        # Mock ContextManager
+        mock_context_instance = Mock()
+        mock_context_instance.append_context_usage_to_message.return_value = "1. Talking to Test System. Processing request. 25% context"
+        mock_context_manager.return_value = mock_context_instance
         
         # Mock tool call
         mock_tool_call = Mock()
@@ -437,11 +473,17 @@ class TestIterativeWorkflow:
         )
         
         # Verify that format_messages_with_context was called with the conversation history
+        # Note: user_message is empty since it's already in conversation_history
         self.llm_service.format_messages_with_context.assert_called_once_with(
-            "Current question",
+            "",
             conversation_history,
             ["You are a helpful assistant."]
         )
+        
+        # Verify that the conversation history contains the user message
+        # The user message should be in the conversation history since it was stored in the database
+        user_messages = [msg for msg in conversation_history if msg.get("role") == "user"]
+        assert len(user_messages) >= 1  # Should have at least one user message
         
         assert result["content"] == "Based on the context and tool result, here's the answer."
     
@@ -473,14 +515,20 @@ class TestIterativeWorkflow:
         assert result["metadata"]["error"] is True
     
     @pytest.mark.asyncio
+    @patch('limp.services.context.ContextManager')
     @patch('limp.api.im.get_system_config')
     @patch('limp.api.im.get_config')
-    async def test_custom_max_iterations_from_config(self, mock_get_config, mock_get_system_config):
+    async def test_custom_max_iterations_from_config(self, mock_get_config, mock_get_system_config, mock_context_manager):
         """Test that custom max_iterations from config is respected."""
         # Set custom max_iterations
         self.config.llm.max_iterations = 5
         mock_get_config.return_value = self.config
         mock_get_system_config.return_value = self.mock_system_config
+        
+        # Mock ContextManager
+        mock_context_instance = Mock()
+        mock_context_instance.append_context_usage_to_message.return_value = "1. Talking to Test System. Processing request. 25% context"
+        mock_context_manager.return_value = mock_context_instance
         
         # Mock tool call
         mock_tool_call = Mock()
@@ -527,12 +575,18 @@ class TestIterativeWorkflow:
         assert self.llm_service.chat_completion.call_count == 6  # 5 iterations + 1 final call
     
     @pytest.mark.asyncio
+    @patch('limp.services.context.ContextManager')
     @patch('limp.api.im.get_system_config')
     @patch('limp.api.im.get_config')
-    async def test_final_prompt_sent_when_max_iterations_exceeded(self, mock_get_config, mock_get_system_config):
+    async def test_final_prompt_sent_when_max_iterations_exceeded(self, mock_get_config, mock_get_system_config, mock_context_manager):
         """Test that final prompt is sent when max iterations are exceeded."""
         mock_get_config.return_value = self.config
         mock_get_system_config.return_value = self.mock_system_config
+        
+        # Mock ContextManager
+        mock_context_instance = Mock()
+        mock_context_instance.append_context_usage_to_message.return_value = "1. Talking to Test System. Processing request. 25% context"
+        mock_context_manager.return_value = mock_context_instance
         
         # Mock tool call
         mock_tool_call = Mock()

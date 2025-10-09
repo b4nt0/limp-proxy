@@ -101,9 +101,18 @@ class TestAuthenticationFlow:
         # Verify that format_messages_with_context was called with system prompts
         mock_llm_instance.format_messages_with_context.assert_called_once()
         call_args = mock_llm_instance.format_messages_with_context.call_args
-        assert call_args[0][0] == "Hello, bot!"  # user_message
-        assert call_args[0][1] == []  # conversation_history
+        assert call_args[0][0] == ""  # user_message is empty since it's already in conversation history
+        assert call_args[0][1] == []  # conversation_history (empty in this test case)
         assert call_args[0][2] == []  # system_prompts (empty because no primary system)
+        
+        # Verify that the user message was stored in the database
+        mock_store_user_message.assert_called_once_with(
+            self.mock_db_session,
+            1,  # conversation_id
+            "Hello, bot!",  # content
+            "1234567890.123456",  # timestamp
+            "test_external_id"  # external_id
+        )
     
     @patch('limp.api.im.get_config')
     @patch('limp.api.im.get_or_create_user')
@@ -176,13 +185,22 @@ class TestAuthenticationFlow:
         # Verify that format_messages_with_context was called with system prompts
         mock_llm_instance.format_messages_with_context.assert_called_once()
         call_args = mock_llm_instance.format_messages_with_context.call_args
-        assert call_args[0][0] == "Hello, bot!"  # user_message
-        assert call_args[0][1] == []  # conversation_history
+        assert call_args[0][0] == ""  # user_message is empty since it's already in conversation history
+        assert call_args[0][1] == []  # conversation_history (empty in this test case)
         assert call_args[0][2] == [  # system_prompts
             "You are a helpful AI assistant.",
             "Always be polite and professional.",
             "If you need to access external systems, ask the user to authorize access first."
         ]
+        
+        # Verify that the user message was stored in the database
+        mock_store_user_message.assert_called_once_with(
+            self.mock_db_session,
+            1,  # conversation_id
+            "Hello, bot!",  # content
+            "1234567890.123456",  # timestamp
+            "test_external_id"  # external_id
+        )
     
     @patch('limp.api.im.get_config')
     @patch('limp.api.im.get_or_create_user')

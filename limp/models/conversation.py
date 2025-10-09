@@ -35,7 +35,7 @@ class Message(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
-    role = Column(String, nullable=False)  # 'user', 'assistant', 'system', 'tool_request', 'tool_response'
+    role = Column(String, nullable=False)  # 'user', 'assistant', 'system', 'tool_request', 'tool_response', 'summary'
     content = Column(Text, nullable=False)
     external_id = Column(String, nullable=True)  # Unique identifier from external system
     message_metadata = Column(JSON, nullable=True)  # Additional message metadata

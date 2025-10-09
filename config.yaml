@@ -20,6 +20,10 @@ llm:
   max_tokens: 4000
   temperature: 0.7
   max_iterations: 8
+  # Context management settings
+  context_threshold: 0.75  # Trigger summarization when context is 75% full
+  context_window_size: null  # Auto-detect from OpenAI API
+  summary_max_tokens: 2048  # Maximum tokens for conversation summaries
 
 external_systems:
   - name: "example-system"

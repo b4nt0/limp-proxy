@@ -261,8 +261,27 @@ class TestMessageStorage:
         store_user_message(test_session, conversation.id, "How are you?")
         store_assistant_message(test_session, conversation.id, "I'm doing well, thanks!")
         
-        # Get conversation history
-        history = get_conversation_history(test_session, conversation.id)
+        # Get conversation history with mocked context manager
+        with patch('limp.api.im.get_config') as mock_get_config, \
+             patch('limp.api.im.ContextManager') as mock_context_manager:
+            
+            # Mock config
+            mock_config = Mock()
+            mock_config.llm = Mock()
+            mock_get_config.return_value = mock_config
+            
+            # Mock context manager
+            mock_instance = Mock()
+            mock_instance.reconstruct_history_with_summary.return_value = [
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "Hi there!"},
+                {"role": "user", "content": "How are you?"},
+                {"role": "assistant", "content": "I'm doing well, thanks!"}
+            ]
+            mock_instance.should_summarize.return_value = False
+            mock_context_manager.return_value = mock_instance
+            
+            history = get_conversation_history(test_session, conversation.id)
         
         assert len(history) == 4
         assert history[0]["role"] == "user"
@@ -474,8 +493,19 @@ class TestConversationIntegration:
             store_user_message(test_session, same_conversation.id, "How are you?")
             store_assistant_message(test_session, same_conversation.id, "I'm doing well!")
             
-            # Get history
-            history = get_conversation_history(test_session, same_conversation.id)
+            # Get history with mocked context manager
+            with patch('limp.api.im.ContextManager') as mock_context_manager:
+                mock_instance = Mock()
+                mock_instance.reconstruct_history_with_summary.return_value = [
+                    {"role": "user", "content": "Hello"},
+                    {"role": "assistant", "content": "Hi there!"},
+                    {"role": "user", "content": "How are you?"},
+                    {"role": "assistant", "content": "I'm doing well!"}
+                ]
+                mock_instance.should_summarize.return_value = False
+                mock_context_manager.return_value = mock_instance
+                
+                history = get_conversation_history(test_session, same_conversation.id)
             
             assert len(history) == 4
             assert history[0]["role"] == "user"
@@ -593,8 +623,30 @@ class TestToolRequestResponseStorage:
         # Final assistant message
         store_assistant_message(test_session, conversation.id, "Here's the weather: New York is sunny (72°F), London is cloudy (55°F).")
         
-        # Get conversation history
-        history = get_conversation_history(test_session, conversation.id)
+        # Get conversation history with mocked context manager and config
+        with patch('limp.api.im.get_config') as mock_get_config, \
+             patch('limp.api.im.ContextManager') as mock_context_manager:
+            
+            # Mock config
+            mock_config = Mock()
+            mock_config.llm = Mock()
+            mock_get_config.return_value = mock_config
+            
+            # Mock context manager
+            mock_instance = Mock()
+            mock_instance.reconstruct_history_with_summary.return_value = [
+                {"role": "user", "content": "Get weather for New York and London"},
+                {"role": "assistant", "content": "I'll get the weather for both cities."},
+                {"role": "assistant", "content": "Tool: get_weather\nArguments: {\"location\": \"London\"}", "tool_calls": [{"id": "call_456", "type": "function", "function": {"name": "get_weather", "arguments": "{\"location\": \"London\"}"}}]},
+                {"role": "tool", "content": "Cloudy, 55°F", "tool_call_id": "call_456"},
+                {"role": "assistant", "content": "Tool: get_weather\nArguments: {\"location\": \"Tokyo\"}", "tool_calls": [{"id": "call_789", "type": "function", "function": {"name": "get_weather", "arguments": "{\"location\": \"Tokyo\"}"}}]},
+                {"role": "tool", "content": "Error: Location not found", "tool_call_id": "call_789"},
+                {"role": "assistant", "content": "Here's the weather: New York is sunny (72°F), London is cloudy (55°F)."}
+            ]
+            mock_instance.should_summarize.return_value = False
+            mock_context_manager.return_value = mock_instance
+            
+            history = get_conversation_history(test_session, conversation.id)
         
         # Verify history structure
         assert len(history) == 7  # user, assistant, assistant+tool_call, tool, assistant+tool_call, tool, assistant
@@ -669,8 +721,30 @@ class TestToolRequestResponseStorage:
         
         store_assistant_message(test_session, conversation.id, "I couldn't find weather data for those cities.")
         
-        # Get conversation history
-        history = get_conversation_history(test_session, conversation.id)
+        # Get conversation history with mocked context manager
+        with patch('limp.api.im.get_config') as mock_get_config, \
+             patch('limp.api.im.ContextManager') as mock_context_manager:
+            
+            # Mock config
+            mock_config = Mock()
+            mock_config.llm = Mock()
+            mock_get_config.return_value = mock_config
+            
+            # Mock context manager
+            mock_instance = Mock()
+            mock_instance.reconstruct_history_with_summary.return_value = [
+                {"role": "user", "content": "Get weather for InvalidCity"},
+                {"role": "assistant", "content": "I'll try to get the weather."},
+                {"role": "assistant", "content": "Tool: get_weather\nArguments: {\"location\": \"InvalidCity1\"}", "tool_calls": [{"id": "call_123", "type": "function", "function": {"name": "get_weather", "arguments": "{\"location\": \"InvalidCity1\"}"}}]},
+                {"role": "tool", "content": "Error: City not found", "tool_call_id": "call_123"},
+                {"role": "assistant", "content": "Tool: get_weather\nArguments: {\"location\": \"InvalidCity2\"}", "tool_calls": [{"id": "call_456", "type": "function", "function": {"name": "get_weather", "arguments": "{\"location\": \"InvalidCity2\"}"}}]},
+                {"role": "tool", "content": "Error: City not found", "tool_call_id": "call_456"},
+                {"role": "assistant", "content": "I couldn't find weather data for those cities."}
+            ]
+            mock_instance.should_summarize.return_value = False
+            mock_context_manager.return_value = mock_instance
+            
+            history = get_conversation_history(test_session, conversation.id)
         
         # Should include all tool calls since none were successful
         assert len(history) == 7  # user, assistant, assistant+tool_call, tool, assistant+tool_call, tool, assistant
@@ -713,8 +787,28 @@ class TestToolRequestResponseStorage:
         
         store_assistant_message(test_session, conversation.id, "Here's what I found...")
         
-        # Get conversation history
-        history = get_conversation_history(test_session, conversation.id)
+        # Get conversation history with mocked context manager and config
+        with patch('limp.api.im.get_config') as mock_get_config, \
+             patch('limp.api.im.ContextManager') as mock_context_manager:
+            
+            # Mock config
+            mock_config = Mock()
+            mock_config.llm = Mock()
+            mock_get_config.return_value = mock_config
+            
+            # Mock context manager
+            mock_instance = Mock()
+            mock_instance.reconstruct_history_with_summary.return_value = [
+                {"role": "user", "content": "Get weather for multiple cities"},
+                {"role": "assistant", "content": "I'll get the weather."},
+                {"role": "assistant", "content": "Tool: get_weather\nArguments: {\"location\": \"London\"}", "tool_calls": [{"id": "call_789", "type": "function", "function": {"name": "get_weather", "arguments": "{\"location\": \"London\"}"}}]},
+                {"role": "tool", "content": "Cloudy, 55°F", "tool_call_id": "call_789"},
+                {"role": "assistant", "content": "Here's what I found..."}
+            ]
+            mock_instance.should_summarize.return_value = False
+            mock_context_manager.return_value = mock_instance
+            
+            history = get_conversation_history(test_session, conversation.id)
         
         # Should include only the latest tool call (call_789) since it's the latest successful response
         # Expected: user, assistant, assistant+tool_call_3, tool_3, assistant

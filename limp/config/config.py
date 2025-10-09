@@ -30,6 +30,10 @@ class LLMConfig(BaseModel):
     max_tokens: int = Field(default=4000)
     temperature: float = Field(default=0.7)
     max_iterations: int = Field(default=8, description="Maximum number of tool calling iterations")
+    # Context management settings
+    context_threshold: float = Field(default=0.75, description="Context window threshold (0.0-1.0) when to trigger summarization")
+    context_window_size: Optional[int] = Field(default=None, description="Context window size in tokens (auto-detected if None)")
+    summary_max_tokens: int = Field(default=2048, description="Maximum tokens for conversation summaries")
 
 
 class OAuth2Config(BaseModel):

@@ -11,6 +11,7 @@ from ..database import get_session
 from ..services.oauth2 import OAuth2Service
 from ..services.llm import LLMService
 from ..services.tools import ToolsService
+from ..services.context import ContextManager
 from ..config import get_config
 from ..models.user import User
 from ..models.conversation import Conversation, Message
@@ -111,8 +112,14 @@ async def handle_user_message(
         conversation = get_or_create_conversation(db, user.id, message_data, platform)
         store_user_message(db, conversation.id, message_data["text"], message_data.get("timestamp"), external_id)
         
-        # Get conversation history
-        conversation_history = get_conversation_history(db, conversation.id)
+        # Get conversation history with context management and temporary messages
+        conversation_history = get_conversation_history(
+            db, 
+            conversation.id, 
+            im_service, 
+            message_data["channel"], 
+            message_data.get("timestamp")
+        )
         
         # Create services
         oauth2_service = OAuth2Service(db)
@@ -193,10 +200,11 @@ async def process_llm_workflow(
         tools = tools_service.get_cleaned_tools_for_openai(system_configs)
         
         # Format messages with system prompts (no tool-specific prompts yet)
+        # Note: user_message is already included in conversation_history, so we don't need to pass it separately
         config = get_config()
         system_prompts = config.bot.system_prompts if config.bot.system_prompts else []
         messages = llm_service.format_messages_with_context(
-            user_message,
+            "",  # Empty user message since it's already in conversation_history
             conversation_history,
             system_prompts
         )
@@ -226,7 +234,18 @@ async def process_llm_workflow(
                         system_name = tools_service.get_system_name_for_tool(first_tool_name, system_configs)
                         tool_description = tools_service.get_tool_description_summary(first_tool_name, system_configs)
                     
-                    progress_content = f"{iteration + 1}. Talking to {system_name}. {tool_description}"
+                    # Create base progress message
+                    base_progress = f"{iteration + 1}. Talking to {system_name}. {tool_description}"
+                    
+                    # Add context usage percentage based on current messages (including new tool calls)
+                    from limp.services.context import ContextManager
+                    context_manager = ContextManager(config.llm)
+                    progress_content = context_manager.append_context_usage_to_message(
+                        base_progress, 
+                        messages, 
+                        []  # No additional system prompts since they're already in messages
+                    )
+                    
                     temp_message_id = im_service.send_temporary_message(channel, progress_content, original_message_ts)
                     if temp_message_id:
                         temporary_message_ids.append(temp_message_id)
@@ -328,6 +347,16 @@ async def process_llm_workflow(
                         response_temp_id = im_service.send_temporary_message(channel, response_content, original_message_ts)
                         if response_temp_id:
                             temporary_message_ids.append(response_temp_id)
+                
+                # Optimize messages to keep only the latest successful tool call
+                # This prevents context bloat during iterative tool calling
+                from limp.services.context import ContextManager
+                context_manager = ContextManager(config.llm)
+                messages = context_manager.optimize_messages_for_tool_calls(messages)
+                
+                # Optimize tool system prompts to keep only the latest ones
+                # and only if the latest message is a tool response
+                messages = context_manager.optimize_tool_system_prompts(messages)
                 
                 # Inject tool-specific system prompts for the next LLM call
                 # This provides context about the tool outputs for the next iteration
@@ -558,97 +587,36 @@ def store_tool_response(db: Session, conversation_id: int, tool_call_id: str, re
     return message
 
 
-def get_conversation_history(db: Session, conversation_id: int) -> list:
-    """Get conversation history for a specific conversation with tool request/response filtering."""
-    messages = db.query(Message).filter(
-        Message.conversation_id == conversation_id
-    ).order_by(Message.created_at.asc()).all()
+def get_conversation_history(db: Session, conversation_id: int, im_service=None, channel: str = None, original_message_ts: str = None) -> list:
+    """Get conversation history for a specific conversation with context management."""
+    config = get_config()
+    context_manager = ContextManager(config.llm)
     
-    # Filter messages according to the requirements:
-    # - Include all user, assistant, and system messages
-    # - For tool requests/responses, only include the latest tool request and response
-    #   until the latest successful tool response
-    filtered_messages = []
-    tool_requests = []
-    tool_responses = []
+    # Use context manager to reconstruct history with summaries
+    history = context_manager.reconstruct_history_with_summary(db, conversation_id)
     
-    for message in messages:
-        if message.role in ["user", "assistant", "system"]:
-            # Always include user, assistant, and system messages
-            filtered_messages.append(message)
-        elif message.role == "tool_request":
-            # Collect tool requests
-            tool_requests.append(message)
-        elif message.role == "tool_response":
-            # Collect tool responses
-            tool_responses.append(message)
     
-    # Find the latest successful tool response
-    latest_successful_response = None
-    for response in reversed(tool_responses):
-        if response.message_metadata and response.message_metadata.get("success", False):
-            latest_successful_response = response
-            break
-    
-    # Include tool requests and responses from the latest successful response onwards
-    if latest_successful_response:
-        # Find the index of the latest successful response
-        successful_response_index = tool_responses.index(latest_successful_response)
+    # Check if we need to summarize the conversation
+    if context_manager.should_summarize(history):
+        logger.info(f"Context threshold reached for conversation {conversation_id}, summarizing...")
         
-        # Include all tool requests and responses from this point onwards
-        for i, response in enumerate(tool_responses):
-            if i >= successful_response_index:
-                filtered_messages.append(response)
-                # Find corresponding tool request
-                tool_call_id = response.message_metadata.get("tool_call_id")
-                if tool_call_id:
-                    for request in tool_requests:
-                        if (request.message_metadata and 
-                            request.message_metadata.get("tool_call_id") == tool_call_id):
-                            filtered_messages.append(request)
-                            break
-    else:
-        # If no successful responses, include all tool requests and responses
-        filtered_messages.extend(tool_requests)
-        filtered_messages.extend(tool_responses)
-    
-    # Sort filtered messages by creation time
-    filtered_messages.sort(key=lambda x: x.created_at)
-    
-    # Format messages for LLM
-    history = []
-    for message in filtered_messages:
-        if message.role in ["user", "assistant", "system"]:
-            history.append({
-                "role": message.role,
-                "content": message.content
-            })
-        elif message.role == "tool_request":
-            # Convert tool request to assistant message with tool calls
-            tool_name = message.message_metadata.get("tool_name", "unknown")
-            tool_arguments = message.message_metadata.get("tool_arguments", "{}")
-            tool_call_id = message.message_metadata.get("tool_call_id", "")
-            
-            history.append({
-                "role": "assistant",
-                "content": message.content,
-                "tool_calls": [{
-                    "id": tool_call_id,
-                    "type": "function",
-                    "function": {
-                        "name": tool_name,
-                        "arguments": tool_arguments
-                    }
-                }]
-            })
-        elif message.role == "tool_response":
-            # Convert tool response to tool message
-            tool_call_id = message.message_metadata.get("tool_call_id", "")
-            history.append({
-                "role": "tool",
-                "content": message.content,
-                "tool_call_id": tool_call_id
-            })
+        # Send summarization notification if IM service is available
+        if im_service and channel:
+            summarization_message = context_manager.create_summarization_message()
+            im_service.send_temporary_message(channel, summarization_message, original_message_ts)
+        
+        # Get the reconstructed history (original request + latest summary + messages after summary)
+        # This ensures we don't include past summaries in the new summary
+        all_formatted = context_manager.reconstruct_history_with_summary(db, conversation_id)
+        
+        # Generate summary
+        summary = context_manager.summarize_conversation(all_formatted, exclude_tool_calls=True)
+        
+        # Store the summary
+        context_manager.store_summary(db, conversation_id, summary)
+        
+        # Reconstruct history with the new summary
+        history = context_manager.reconstruct_history_with_summary(db, conversation_id)
     
     return history
 
