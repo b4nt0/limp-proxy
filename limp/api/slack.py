@@ -83,7 +83,7 @@ async def handle_slack_install(
         organization = await store_slack_installation(token_data, db)
         
         # Send confirmation DM to installing user
-        await send_installation_confirmation(token_data, slack_config)
+        await send_installation_confirmation(token_data, slack_config, config)
         
         logger.info(f"Successfully installed Slack app for organization: {organization.organization_id}")
         
@@ -208,7 +208,7 @@ async def store_slack_installation(token_data: Dict[str, Any], db: Session) -> S
         raise HTTPException(status_code=500, detail="Failed to store installation data")
 
 
-async def send_installation_confirmation(token_data: Dict[str, Any], slack_config) -> None:
+async def send_installation_confirmation(token_data: Dict[str, Any], slack_config, config) -> None:
     """Send confirmation DM to the installing user."""
     try:
         # Check if authed_user data exists and is not empty
@@ -224,16 +224,19 @@ async def send_installation_confirmation(token_data: Dict[str, Any], slack_confi
             logger.info("Incomplete authed user data (missing ID or access token) - skipping confirmation DM")
             return
         
+        # Get bot name from configuration
+        bot_name = config.bot.name
+        
         # Send DM to the installing user
         message = {
             "channel": authed_user_id,
-            "text": "🎉 Thank you for installing the LIMP bot! The installation was successful and the bot is now ready to help you with your tasks.",
+            "text": f"🎉 Thank you for installing the {bot_name} bot! The installation was successful and the bot is now ready to help you with your tasks.",
             "blocks": [
                 {
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": "🎉 *Installation Successful!*\n\nThank you for installing the LIMP bot! The bot is now ready to help you with your tasks."
+                        "text": f"🎉 *Installation Successful!*\n\nThank you for installing the {bot_name} bot! The bot is now ready to help you with your tasks."
                     }
                 }
             ]
