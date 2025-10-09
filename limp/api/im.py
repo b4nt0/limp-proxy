@@ -131,6 +131,7 @@ async def handle_user_message(
             bot_url,
             im_service,
             message_data["channel"],
+            conversation.id,
             message_data.get("timestamp")
         )
         
@@ -182,6 +183,7 @@ async def process_llm_workflow(
     bot_url: str,
     im_service: Any,
     channel: str,
+    conversation_id: int,
     original_message_ts: str = None
 ) -> Dict[str, Any]:
     """Process message through LLM workflow with iterative tool calling."""
@@ -260,6 +262,15 @@ async def process_llm_workflow(
                 
                 # Process tool calls
                 for tool_call in tool_calls:
+                    # Store tool request
+                    store_tool_request(
+                        db, 
+                        conversation_id, 
+                        tool_call["function"]["name"], 
+                        tool_call["function"]["arguments"], 
+                        tool_call["id"]
+                    )
+                    
                     # Check authorization
                     system_name = tools_service.get_system_name_for_tool(tool_call["function"]["name"], system_configs)
                     system_config = get_system_config(system_name, system_configs)
@@ -280,9 +291,9 @@ async def process_llm_workflow(
                         auth_token.access_token
                     )
                     
-                    # Add tool result to conversation
-                    # If tool call failed, provide a more user-friendly error message
-                    if not tool_result.get("success", True):
+                    # Store tool response
+                    tool_success = tool_result.get("success", True)
+                    if not tool_success:
                         error_msg = tool_result.get("error", "Unknown error")
                         status_code = tool_result.get("status_code")
                         
@@ -294,6 +305,15 @@ async def process_llm_workflow(
                             tool_result_content = f"Tool call failed: {error_msg}. Check if there is another way to achieve the user's goal."
                     else:
                         tool_result_content = str(tool_result)
+                    
+                    # Store tool response in database
+                    store_tool_response(
+                        db,
+                        conversation_id,
+                        tool_call["id"],
+                        tool_result_content,
+                        tool_success
+                    )
                     
                     messages.append({
                         "role": "tool",
@@ -503,19 +523,132 @@ def store_assistant_message(db: Session, conversation_id: int, content: str, met
     return message
 
 
+def store_tool_request(db: Session, conversation_id: int, tool_name: str, tool_arguments: str, tool_call_id: str) -> Message:
+    """Store tool request in database."""
+    message = Message(
+        conversation_id=conversation_id,
+        role="tool_request",
+        content=f"Tool: {tool_name}\nArguments: {tool_arguments}",
+        message_metadata={
+            "tool_name": tool_name,
+            "tool_arguments": tool_arguments,
+            "tool_call_id": tool_call_id
+        }
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    return message
+
+
+def store_tool_response(db: Session, conversation_id: int, tool_call_id: str, response_content: str, success: bool) -> Message:
+    """Store tool response in database."""
+    message = Message(
+        conversation_id=conversation_id,
+        role="tool_response",
+        content=response_content,
+        message_metadata={
+            "tool_call_id": tool_call_id,
+            "success": success
+        }
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    return message
+
+
 def get_conversation_history(db: Session, conversation_id: int) -> list:
-    """Get conversation history for a specific conversation."""
+    """Get conversation history for a specific conversation with tool request/response filtering."""
     messages = db.query(Message).filter(
         Message.conversation_id == conversation_id
     ).order_by(Message.created_at.asc()).all()
     
+    # Filter messages according to the requirements:
+    # - Include all user, assistant, and system messages
+    # - For tool requests/responses, only include the latest tool request and response
+    #   until the latest successful tool response
+    filtered_messages = []
+    tool_requests = []
+    tool_responses = []
+    
+    for message in messages:
+        if message.role in ["user", "assistant", "system"]:
+            # Always include user, assistant, and system messages
+            filtered_messages.append(message)
+        elif message.role == "tool_request":
+            # Collect tool requests
+            tool_requests.append(message)
+        elif message.role == "tool_response":
+            # Collect tool responses
+            tool_responses.append(message)
+    
+    # Find the latest successful tool response
+    latest_successful_response = None
+    for response in reversed(tool_responses):
+        if response.message_metadata and response.message_metadata.get("success", False):
+            latest_successful_response = response
+            break
+    
+    # Include tool requests and responses from the latest successful response onwards
+    if latest_successful_response:
+        # Find the index of the latest successful response
+        successful_response_index = tool_responses.index(latest_successful_response)
+        
+        # Include all tool requests and responses from this point onwards
+        for i, response in enumerate(tool_responses):
+            if i >= successful_response_index:
+                filtered_messages.append(response)
+                # Find corresponding tool request
+                tool_call_id = response.message_metadata.get("tool_call_id")
+                if tool_call_id:
+                    for request in tool_requests:
+                        if (request.message_metadata and 
+                            request.message_metadata.get("tool_call_id") == tool_call_id):
+                            filtered_messages.append(request)
+                            break
+    else:
+        # If no successful responses, include all tool requests and responses
+        filtered_messages.extend(tool_requests)
+        filtered_messages.extend(tool_responses)
+    
+    # Sort filtered messages by creation time
+    filtered_messages.sort(key=lambda x: x.created_at)
+    
     # Format messages for LLM
     history = []
-    for message in messages:
-        history.append({
-            "role": message.role,
-            "content": message.content
-        })
+    for message in filtered_messages:
+        if message.role in ["user", "assistant", "system"]:
+            history.append({
+                "role": message.role,
+                "content": message.content
+            })
+        elif message.role == "tool_request":
+            # Convert tool request to assistant message with tool calls
+            tool_name = message.message_metadata.get("tool_name", "unknown")
+            tool_arguments = message.message_metadata.get("tool_arguments", "{}")
+            tool_call_id = message.message_metadata.get("tool_call_id", "")
+            
+            history.append({
+                "role": "assistant",
+                "content": message.content,
+                "tool_calls": [{
+                    "id": tool_call_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": tool_arguments
+                    }
+                }]
+            })
+        elif message.role == "tool_response":
+            # Convert tool response to tool message
+            tool_call_id = message.message_metadata.get("tool_call_id", "")
+            history.append({
+                "role": "tool",
+                "content": message.content,
+                "tool_call_id": tool_call_id
+            })
     
     return history
 

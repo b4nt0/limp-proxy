@@ -14,6 +14,8 @@ from limp.api.im import (
     should_create_new_conversation,
     store_user_message,
     store_assistant_message,
+    store_tool_request,
+    store_tool_response,
     get_conversation_history
 )
 from limp.config import Config, IMPlatformConfig
@@ -484,3 +486,250 @@ class TestConversationIntegration:
             assert history[2]["content"] == "How are you?"
             assert history[3]["role"] == "assistant"
             assert history[3]["content"] == "I'm doing well!"
+
+
+class TestToolRequestResponseStorage:
+    """Test tool request and response storage and history reconstruction."""
+    
+    def test_tool_request_response_storage(self, test_session: Session):
+        """Test storing tool requests and responses."""
+        # Create user and conversation
+        user = User(external_id="U123", platform="slack")
+        test_session.add(user)
+        test_session.commit()
+        test_session.refresh(user)
+        
+        conversation = Conversation(user_id=user.id, context={"test": True})
+        test_session.add(conversation)
+        test_session.commit()
+        test_session.refresh(conversation)
+        
+        # Store user message
+        user_msg = store_user_message(test_session, conversation.id, "Get weather for New York")
+        
+        # Store assistant message
+        assistant_msg = store_assistant_message(test_session, conversation.id, "I'll help you get the weather.")
+        
+        # Store tool request
+        tool_req = store_tool_request(
+            test_session, 
+            conversation.id, 
+            "get_weather", 
+            '{"location": "New York"}', 
+            "call_123"
+        )
+        
+        # Store tool response (success)
+        tool_resp = store_tool_response(
+            test_session, 
+            conversation.id, 
+            "call_123", 
+            "Sunny, 72°F", 
+            True
+        )
+        
+        # Store final assistant message
+        final_msg = store_assistant_message(test_session, conversation.id, "The weather in New York is sunny and 72°F.")
+        
+        # Verify all messages were stored
+        messages = test_session.query(Message).filter(
+            Message.conversation_id == conversation.id
+        ).order_by(Message.created_at.asc()).all()
+        
+        assert len(messages) == 5
+        assert messages[0].role == "user"
+        assert messages[1].role == "assistant"
+        assert messages[2].role == "tool_request"
+        assert messages[3].role == "tool_response"
+        assert messages[4].role == "assistant"
+        
+        # Verify tool request metadata
+        assert messages[2].message_metadata["tool_name"] == "get_weather"
+        assert messages[2].message_metadata["tool_arguments"] == '{"location": "New York"}'
+        assert messages[2].message_metadata["tool_call_id"] == "call_123"
+        
+        # Verify tool response metadata
+        assert messages[3].message_metadata["tool_call_id"] == "call_123"
+        assert messages[3].message_metadata["success"] == True
+    
+    def test_conversation_history_with_tool_calls(self, test_session: Session):
+        """Test conversation history reconstruction with tool calls."""
+        # Create user and conversation
+        user = User(external_id="U123", platform="slack")
+        test_session.add(user)
+        test_session.commit()
+        test_session.refresh(user)
+        
+        conversation = Conversation(user_id=user.id, context={"test": True})
+        test_session.add(conversation)
+        test_session.commit()
+        test_session.refresh(conversation)
+        
+        # Simulate a conversation with multiple tool calls
+        # User message
+        store_user_message(test_session, conversation.id, "Get weather for New York and London")
+        
+        # Assistant message
+        store_assistant_message(test_session, conversation.id, "I'll get the weather for both cities.")
+        
+        # Tool request 1
+        store_tool_request(test_session, conversation.id, "get_weather", '{"location": "New York"}', "call_123")
+        
+        # Tool response 1 (success)
+        store_tool_response(test_session, conversation.id, "call_123", "Sunny, 72°F", True)
+        
+        # Tool request 2
+        store_tool_request(test_session, conversation.id, "get_weather", '{"location": "London"}', "call_456")
+        
+        # Tool response 2 (success)
+        store_tool_response(test_session, conversation.id, "call_456", "Cloudy, 55°F", True)
+        
+        # Tool request 3
+        store_tool_request(test_session, conversation.id, "get_weather", '{"location": "Tokyo"}', "call_789")
+        
+        # Tool response 3 (failure)
+        store_tool_response(test_session, conversation.id, "call_789", "Error: Location not found", False)
+        
+        # Final assistant message
+        store_assistant_message(test_session, conversation.id, "Here's the weather: New York is sunny (72°F), London is cloudy (55°F).")
+        
+        # Get conversation history
+        history = get_conversation_history(test_session, conversation.id)
+        
+        # Verify history structure
+        assert len(history) == 7  # user, assistant, assistant+tool_call, tool, assistant+tool_call, tool, assistant
+        
+        # Check roles in order
+        expected_roles = ["user", "assistant", "assistant", "tool", "assistant", "tool", "assistant"]
+        actual_roles = [msg["role"] for msg in history]
+        assert actual_roles == expected_roles
+        
+        # Verify user message
+        assert history[0]["role"] == "user"
+        assert history[0]["content"] == "Get weather for New York and London"
+        
+        # Verify first assistant message
+        assert history[1]["role"] == "assistant"
+        assert history[1]["content"] == "I'll get the weather for both cities."
+        
+        # Verify first tool call (should be the second tool call - London)
+        assert history[2]["role"] == "assistant"
+        assert "tool_calls" in history[2]
+        assert len(history[2]["tool_calls"]) == 1
+        assert history[2]["tool_calls"][0]["function"]["name"] == "get_weather"
+        assert history[2]["tool_calls"][0]["function"]["arguments"] == '{"location": "London"}'
+        assert history[2]["tool_calls"][0]["id"] == "call_456"
+        
+        # Verify first tool response (London)
+        assert history[3]["role"] == "tool"
+        assert history[3]["content"] == "Cloudy, 55°F"
+        assert history[3]["tool_call_id"] == "call_456"
+        
+        # Verify second tool call (Tokyo)
+        assert history[4]["role"] == "assistant"
+        assert "tool_calls" in history[4]
+        assert len(history[4]["tool_calls"]) == 1
+        assert history[4]["tool_calls"][0]["function"]["name"] == "get_weather"
+        assert history[4]["tool_calls"][0]["function"]["arguments"] == '{"location": "Tokyo"}'
+        assert history[4]["tool_calls"][0]["id"] == "call_789"
+        
+        # Verify second tool response (Tokyo - failure)
+        assert history[5]["role"] == "tool"
+        assert history[5]["content"] == "Error: Location not found"
+        assert history[5]["tool_call_id"] == "call_789"
+        
+        # Verify final assistant message
+        assert history[6]["role"] == "assistant"
+        assert "Here's the weather:" in history[6]["content"]
+    
+    def test_conversation_history_with_no_successful_tool_calls(self, test_session: Session):
+        """Test conversation history when no tool calls are successful."""
+        # Create user and conversation
+        user = User(external_id="U123", platform="slack")
+        test_session.add(user)
+        test_session.commit()
+        test_session.refresh(user)
+        
+        conversation = Conversation(user_id=user.id, context={"test": True})
+        test_session.add(conversation)
+        test_session.commit()
+        test_session.refresh(conversation)
+        
+        # Simulate a conversation with only failed tool calls
+        store_user_message(test_session, conversation.id, "Get weather for InvalidCity")
+        store_assistant_message(test_session, conversation.id, "I'll try to get the weather.")
+        
+        # Tool request 1 (failure)
+        store_tool_request(test_session, conversation.id, "get_weather", '{"location": "InvalidCity1"}', "call_123")
+        store_tool_response(test_session, conversation.id, "call_123", "Error: City not found", False)
+        
+        # Tool request 2 (failure)
+        store_tool_request(test_session, conversation.id, "get_weather", '{"location": "InvalidCity2"}', "call_456")
+        store_tool_response(test_session, conversation.id, "call_456", "Error: City not found", False)
+        
+        store_assistant_message(test_session, conversation.id, "I couldn't find weather data for those cities.")
+        
+        # Get conversation history
+        history = get_conversation_history(test_session, conversation.id)
+        
+        # Should include all tool calls since none were successful
+        assert len(history) == 7  # user, assistant, assistant+tool_call, tool, assistant+tool_call, tool, assistant
+        
+        # Check that both tool calls are included
+        tool_call_messages = [msg for msg in history if msg["role"] == "assistant" and "tool_calls" in msg]
+        assert len(tool_call_messages) == 2
+        
+        tool_response_messages = [msg for msg in history if msg["role"] == "tool"]
+        assert len(tool_response_messages) == 2
+    
+    def test_conversation_history_mixed_success_failure(self, test_session: Session):
+        """Test conversation history with mixed successful and failed tool calls."""
+        # Create user and conversation
+        user = User(external_id="U123", platform="slack")
+        test_session.add(user)
+        test_session.commit()
+        test_session.refresh(user)
+        
+        conversation = Conversation(user_id=user.id, context={"test": True})
+        test_session.add(conversation)
+        test_session.commit()
+        test_session.refresh(conversation)
+        
+        # Simulate conversation: success -> failure -> success
+        store_user_message(test_session, conversation.id, "Get weather for multiple cities")
+        store_assistant_message(test_session, conversation.id, "I'll get the weather.")
+        
+        # Tool call 1 (success)
+        store_tool_request(test_session, conversation.id, "get_weather", '{"location": "New York"}', "call_123")
+        store_tool_response(test_session, conversation.id, "call_123", "Sunny, 72°F", True)
+        
+        # Tool call 2 (failure)
+        store_tool_request(test_session, conversation.id, "get_weather", '{"location": "InvalidCity"}', "call_456")
+        store_tool_response(test_session, conversation.id, "call_456", "Error: City not found", False)
+        
+        # Tool call 3 (success)
+        store_tool_request(test_session, conversation.id, "get_weather", '{"location": "London"}', "call_789")
+        store_tool_response(test_session, conversation.id, "call_789", "Cloudy, 55°F", True)
+        
+        store_assistant_message(test_session, conversation.id, "Here's what I found...")
+        
+        # Get conversation history
+        history = get_conversation_history(test_session, conversation.id)
+        
+        # Should include only the latest tool call (call_789) since it's the latest successful response
+        # Expected: user, assistant, assistant+tool_call_3, tool_3, assistant
+        assert len(history) == 5
+        
+        # Verify the tool call included is only the last one (London - success)
+        tool_call_messages = [msg for msg in history if msg["role"] == "assistant" and "tool_calls" in msg]
+        assert len(tool_call_messages) == 1
+        
+        # The tool call should be the success (London)
+        assert tool_call_messages[0]["tool_calls"][0]["function"]["arguments"] == '{"location": "London"}'
+        assert tool_call_messages[0]["tool_calls"][0]["id"] == "call_789"
+        
+        # Verify tool response
+        tool_response_messages = [msg for msg in history if msg["role"] == "tool"]
+        assert len(tool_response_messages) == 1
+        assert tool_response_messages[0]["content"] == "Cloudy, 55°F"
+        assert tool_response_messages[0]["tool_call_id"] == "call_789"
