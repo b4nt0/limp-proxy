@@ -47,8 +47,16 @@ class LLMService:
             
             response = self.client.chat.completions.create(**kwargs)
             
+            # Check if response was truncated due to length limits
+            if response.choices[0].finish_reason == 'length':
+                content = response.choices[0].message.content or ""
+                truncated_message = "\n\n[Response was truncated due to length limits. The allowed response length was not sufficient to complete the full response.]"
+                content += truncated_message
+            else:
+                content = response.choices[0].message.content
+            
             return {
-                "content": response.choices[0].message.content,
+                "content": content,
                 "tool_calls": response.choices[0].message.tool_calls,
                 "finish_reason": response.choices[0].finish_reason,
                 "usage": {
