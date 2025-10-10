@@ -277,7 +277,7 @@ async def handle_slack_webhook(request: Request, db: Session = Depends(get_sessi
             request_data = await request.json()
             logger.info(f"Successfully parsed Slack request JSON: {request_data}")
         except Exception as json_error:
-            logger.error(f"Failed to parse JSON from Slack request: {json_error}")
+            logger.warning(f"Failed to parse JSON from Slack request: {json_error}")
             # Check if it's a client disconnect error
             if "ClientDisconnect" in str(type(json_error)):
                 logger.warning("Client disconnected while reading request body")
@@ -286,9 +286,9 @@ async def handle_slack_webhook(request: Request, db: Session = Depends(get_sessi
             # Try to get raw body for debugging
             try:
                 body = await request.body()
-                logger.error(f"Raw request body: {body}")
+                logger.warning(f"Raw request body: {body}")
             except Exception as body_error:
-                logger.error(f"Failed to read request body: {body_error}")
+                logger.warning(f"Failed to read request body: {body_error}")
                 if "ClientDisconnect" in str(type(body_error)):
                     logger.warning("Client disconnected while reading raw body")
                     return {"status": "client_disconnected"}
@@ -300,13 +300,45 @@ async def handle_slack_webhook(request: Request, db: Session = Depends(get_sessi
             logger.warning("Empty request data received")
             return {"status": "empty_request"}
         
-        # Create Slack service
+        # EARLY SCREENING: Handle URL verification challenges immediately
+        if request_data.get("type") == "url_verification":
+            logger.info("Handling Slack challenge request (early filtering)")
+            return {"challenge": request_data.get("challenge")}
+        
+        # Load config for early filtering (we need app_id for bot message filtering)
         try:
             config = get_config()
-            logger.info(f"Config loaded: {config}")
             slack_config = config.get_im_platform_by_key("slack")
-            logger.info(f"Slack config: {slack_config}")
+            logger.debug(f"Config loaded: {config}")
+        except Exception as e:
+            logger.error(f"Error loading config: {e}")
+            raise HTTPException(status_code=500, detail="Configuration error")
+        
+        # EARLY SCREENING: Filter out messages from our own bot
+        if request_data.get("type") == "event_callback":
+            event = request_data.get("event", {})
             
+            # Ignore messages from our own bot to prevent infinite loops
+            if slack_config.app_id and event.get("app_id") == slack_config.app_id:
+                logger.info(f"Ignoring message from own app_id: {slack_config.app_id} (early filtering)")
+                return {"status": "ignored"}
+            
+            # EARLY SCREENING: Filter out bot messages and other inactionable events
+            if event.get("type") in ["message", "app_mention"] and event.get("bot_id"):
+                logger.info(f"Ignoring message from bot (bot_id: {event.get('bot_id')}) (early filtering)")
+                return {"status": "ignored"}
+            
+            # EARLY SCREENING: Filter out non-message events that we don't handle
+            if event.get("type") not in ["message", "app_mention"]:
+                logger.info(f"Ignoring non-message event type: {event.get('type')} (early filtering)")
+                return {"status": "ignored"}
+        
+        # EARLY SCREENING: Filter out non-event-callback requests that aren't challenges
+        if request_data.get("type") not in ["url_verification", "event_callback"]:
+            logger.info(f"Ignoring non-event-callback request type: {request_data.get('type')} (early filtering)")
+            return {"status": "ignored"}
+        
+        try:
             # Get bot token from database for the organization
             # For now, we'll use the first available organization
             # In a real implementation, you'd need to determine which organization
@@ -340,14 +372,6 @@ async def handle_slack_webhook(request: Request, db: Session = Depends(get_sessi
         except Exception as parse_error:
             logger.error(f"Failed to parse message: {parse_error}")
             raise HTTPException(status_code=400, detail="Failed to parse message data")
-        
-        if message_data["type"] == "challenge":
-            logger.info("Handling Slack challenge request")
-            return {"challenge": message_data["challenge"]}
-        
-        if message_data["type"] == "ignored":
-            logger.info("Message ignored (from own bot)")
-            return {"status": "ignored"}
         
         if message_data["type"] == "message":
             logger.info("Processing user message")
