@@ -102,7 +102,7 @@ def test_slack_webhook_message(test_client: TestClient):
         
         response = test_client.post("/api/slack/webhook", json=message_data)
         assert response.status_code == 200
-        assert response.json()["status"] == "ok"
+        assert response.json()["status"] == "accepted"
 
 
 def test_slack_webhook_ignored_message(test_client: TestClient):

@@ -17,6 +17,7 @@ import logging
 import httpx
 import json
 import os
+import asyncio
 
 from ..database import get_session
 from ..services.im import IMServiceFactory
@@ -263,7 +264,7 @@ async def send_installation_confirmation(token_data: Dict[str, Any], slack_confi
 
 @slack_router.post("/webhook")
 async def handle_slack_webhook(request: Request, db: Session = Depends(get_session)):
-    """Handle Slack webhook requests."""
+    """Handle Slack webhook requests with immediate response to prevent ClientDisconnect."""
     try:
         # Log request headers for debugging
         logger.info(f"Received Slack webhook request with headers: {dict(request.headers)}")
@@ -338,48 +339,33 @@ async def handle_slack_webhook(request: Request, db: Session = Depends(get_sessi
             logger.info(f"Ignoring non-event-callback request type: {request_data.get('type')} (early filtering)")
             return {"status": "ignored"}
         
+        # **DUPLICATE DETECTION**: Check for duplicates before background processing
+        # Parse message to get message data for duplicate detection
         try:
-            # Get bot token from database for the organization
-            # For now, we'll use the first available organization
-            # In a real implementation, you'd need to determine which organization
-            # the message is coming from based on the request data
-            organization = db.query(SlackOrganization).first()
-            bot_token = organization.access_token if organization else None
-            
-            if not bot_token:
-                logger.error("No bot token found for Slack organization")
-                raise HTTPException(status_code=500, detail="No bot token configured")
-            
-            slack_service = IMServiceFactory.create_service("slack", {
+            # Create a temporary service just for parsing (we'll create the real one in background)
+            temp_slack_service = IMServiceFactory.create_service("slack", {
                 **slack_config.model_dump(),
-                "bot_token": bot_token
+                "bot_token": "temp"  # We don't need real token for parsing
             })
-            logger.info(f"Slack service created successfully")
-        except HTTPException:
-            raise
+            message_data = temp_slack_service.parse_message(request_data)
+            
+            if message_data["type"] == "message":
+                # Check for duplicate message
+                from .im import generate_slack_message_id, is_duplicate_message
+                external_id = generate_slack_message_id(message_data)
+                
+                if is_duplicate_message(db, external_id):
+                    logger.info(f"Duplicate message detected, ignoring: {external_id}")
+                    return {"status": "ok", "action": "duplicate_ignored"}
         except Exception as e:
-            logger.error(f"Error creating Slack service: {e}")
-            raise HTTPException(status_code=500, detail=f"Service creation error: {str(e)}")
+            logger.warning(f"Error in duplicate detection: {e}")
+            # Continue with background processing if duplicate detection fails
         
-        # Verify request
-        if not slack_service.verify_request(request_data):
-            raise HTTPException(status_code=401, detail="Invalid request signature")
+        # **IMMEDIATE RESPONSE PATTERN**: Start background processing and return immediately
+        asyncio.create_task(process_slack_message_async(request_data, db, request))
         
-        # Parse message
-        try:
-            message_data = slack_service.parse_message(request_data)
-            logger.info(f"Parsed message: {message_data}")
-        except Exception as parse_error:
-            logger.error(f"Failed to parse message: {parse_error}")
-            raise HTTPException(status_code=400, detail="Failed to parse message data")
-        
-        if message_data["type"] == "message":
-            logger.info("Processing user message")
-            return await handle_user_message(
-                message_data, slack_service, db, "slack", request
-            )
-        
-        return {"status": "ok"}
+        logger.info("Message queued for background processing")
+        return {"status": "accepted"}
         
     except HTTPException:
         raise
@@ -392,6 +378,54 @@ async def handle_slack_webhook(request: Request, db: Session = Depends(get_sessi
             return {"status": "client_disconnected"}
         else:
             raise HTTPException(status_code=500, detail="Internal server error")
+
+
+async def process_slack_message_async(request_data: Dict[str, Any], db: Session, request: Request):
+    """Process Slack message in background after webhook response."""
+    try:
+        logger.info("Starting background processing of Slack message")
+        
+        # Get config and create Slack service (moved from webhook handler)
+        config = get_config()
+        slack_config = config.get_im_platform_by_key("slack")
+        
+        # Get bot token from database for the organization
+        organization = db.query(SlackOrganization).first()
+        bot_token = organization.access_token if organization else None
+        
+        if not bot_token:
+            logger.error("No bot token found for Slack organization")
+            return
+        
+        slack_service = IMServiceFactory.create_service("slack", {
+            **slack_config.model_dump(),
+            "bot_token": bot_token
+        })
+        logger.info(f"Slack service created successfully for background processing")
+        
+        # Verify request
+        if not slack_service.verify_request(request_data):
+            logger.error("Invalid request signature in background processing")
+            return
+        
+        # Parse message
+        try:
+            message_data = slack_service.parse_message(request_data)
+            logger.info(f"Parsed message in background: {message_data}")
+        except Exception as parse_error:
+            logger.error(f"Failed to parse message in background: {parse_error}")
+            return
+        
+        if message_data["type"] == "message":
+            logger.info("Processing user message in background")
+            await handle_user_message(
+                message_data, slack_service, db, "slack", request
+            )
+        else:
+            logger.info(f"Non-message event in background: {message_data['type']}")
+        
+    except Exception as e:
+        logger.error(f"Background message processing error: {e}", exc_info=True)
 
 
 @slack_router.post("/interactivity")
