@@ -408,10 +408,20 @@ async def process_llm_workflow(
         # Clean up any temporary messages on error (unless debug mode is enabled)
         if 'temporary_message_ids' in locals() and temporary_message_ids and not config.bot.debug:
             im_service.cleanup_temporary_messages(channel, temporary_message_ids)
-        return {
-            "content": llm_service.get_error_message(e),
-            "metadata": {"error": True}
-        }
+
+        if not config.bot.debug:
+            return {
+                    "content": llm_service.get_error_message(e),
+                    "metadata": {"error": True}
+                }
+        else:
+            import traceback
+            import sys
+            exc_info_str = ''.join(traceback.format_exception(*sys.exc_info()))
+            return {
+                "content": exc_info_str,
+                "metadata": {"error": True}
+            }
 
 
 def get_or_create_user(db: Session, external_id: str, platform: str) -> User:

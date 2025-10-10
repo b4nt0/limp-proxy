@@ -491,7 +491,13 @@ class TestIterativeWorkflow:
     @patch('limp.api.im.get_config')
     async def test_error_handling_in_workflow(self, mock_get_config):
         """Test error handling in the workflow."""
-        mock_get_config.return_value = self.config
+        # Create a config mock with bot.debug = False
+        config_mock = Mock()
+        config_mock.llm.max_iterations = 3
+        config_mock.external_systems = []
+        config_mock.bot.system_prompts = ["You are a helpful assistant."]
+        config_mock.bot.debug = False
+        mock_get_config.return_value = config_mock
         
         # Mock LLM service to raise an exception
         self.llm_service.chat_completion.side_effect = Exception("LLM service error")
