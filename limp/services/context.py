@@ -363,9 +363,10 @@ Summary:"""
         
         optimized = []
         tool_calls_by_id = {}  # tool_call_id -> (assistant_message, tool_message)
-        latest_successful_tool_call_id = None
+        latest_successful_assistant_message = None
+        latest_assistant_message_tool_call_ids = set()
         
-        # First pass: collect all tool calls and find the latest successful one
+        # First pass: collect all tool calls and find the latest successful assistant message
         for i, message in enumerate(messages):
             if message.get("role") == "assistant" and "tool_calls" in message:
                 # This is an assistant message with tool calls
@@ -381,26 +382,31 @@ Summary:"""
                     content = message.get("content", "")
                     if not any(error_indicator in content.lower() for error_indicator in 
                               ["error", "failed", "access denied", "authentication failed"]):
-                        latest_successful_tool_call_id = tool_call_id
+                        # Track the assistant message that had at least one successful tool call
+                        assistant_msg = tool_calls_by_id[tool_call_id][0]
+                        if latest_successful_assistant_message != assistant_msg:
+                            # New assistant message, collect all its tool call IDs
+                            latest_successful_assistant_message = assistant_msg
+                            latest_assistant_message_tool_call_ids = set(
+                                tc["id"] for tc in assistant_msg.get("tool_calls", [])
+                            )
         
         # Second pass: build optimized messages list
         for message in messages:
             if message.get("role") in ["user", "assistant", "system"]:
                 # For assistant messages with tool calls, only include if it's the latest successful one
                 if message.get("role") == "assistant" and "tool_calls" in message:
-                    tool_call_ids = [tc["id"] for tc in message["tool_calls"]]
-                    # Only include if any of the tool calls in this message is the latest successful one
-                    if (latest_successful_tool_call_id and latest_successful_tool_call_id in tool_call_ids) or \
-                       (not latest_successful_tool_call_id and tool_call_ids):
+                    # Only include if this is the latest successful assistant message
+                    if message == latest_successful_assistant_message or not latest_successful_assistant_message:
                         optimized.append(message)
                 else:
                     # Regular user, assistant, or system messages
                     optimized.append(message)
             elif message.get("role") == "tool":
                 tool_call_id = message.get("tool_call_id", "")
-                # Only include if it's the latest successful tool call or if there are no successful tool calls
-                if (latest_successful_tool_call_id and tool_call_id == latest_successful_tool_call_id) or \
-                   (not latest_successful_tool_call_id and tool_call_id in tool_calls_by_id):
+                # Include all tool responses that belong to the latest successful assistant message
+                if (latest_assistant_message_tool_call_ids and tool_call_id in latest_assistant_message_tool_call_ids) or \
+                   (not latest_assistant_message_tool_call_ids and tool_call_id in tool_calls_by_id):
                     optimized.append(message)
         
         return optimized
