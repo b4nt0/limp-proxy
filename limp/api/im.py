@@ -154,11 +154,27 @@ async def handle_user_message(
             response.get("metadata")
         )
         
+        # Determine if the response was successful based on finish_reason
+        finish_reason = response.get("finish_reason")
+        
+        # Define successful finish reasons for final user messages
+        # "stop" - normal completion (the only successful reason for final responses)
+        # Note: "tool_calls" and "function_call" are not successful for final messages
+        # as they indicate the LLM wanted to make tool calls but couldn't
+        successful_finish_reasons = {"stop"}
+        
+        # Consider the response successful if finish_reason is in successful reasons
+        # or if finish_reason is None/not provided (backward compatibility)
+        is_successful = (
+            finish_reason is None or 
+            finish_reason in successful_finish_reasons
+        )
+        
         # Complete the message with success status
         im_service.complete_message(
             message_data["channel"],
             message_data.get("timestamp"),
-            success=True
+            success=is_successful
         )
         
         return {"status": "ok"}
@@ -389,7 +405,10 @@ async def process_llm_workflow(
                 # No tool calls, clean up temporary messages and return the response
                 if temporary_message_ids and not config.bot.debug:
                     im_service.cleanup_temporary_messages(channel, temporary_message_ids)
-                return {"content": response["content"]}
+                return {
+                    "content": response["content"],
+                    "finish_reason": response.get("finish_reason")
+                }
         
         # If we've exceeded max iterations, clean up temporary messages and send a final prompt
         logger.warning(f"Maximum iterations ({max_iterations}) exceeded. Sending final prompt.")
@@ -401,7 +420,10 @@ async def process_llm_workflow(
         
         # Get final response without tools
         final_response = llm_service.chat_completion(messages)
-        return {"content": final_response["content"]}
+        return {
+            "content": final_response["content"],
+            "finish_reason": final_response.get("finish_reason")
+        }
         
     except Exception as e:
         logger.error(f"LLM workflow error: {e}")

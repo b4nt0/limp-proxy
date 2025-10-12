@@ -767,3 +767,304 @@ class TestConfigurationUpdates:
         )
         
         assert config.primary is True
+
+
+class TestFinishReasonHandling:
+    """Test finish_reason handling in handle_user_message."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.mock_im_service = Mock(spec=SlackService)
+        self.mock_db_session = Mock()
+        self.mock_user = Mock()
+        self.mock_user.id = 1
+        self.mock_user.external_id = "U123456"
+        self.mock_user.platform = "slack"
+        
+        # Mock message data
+        self.message_data = {
+            "user_id": "U123456",
+            "channel": "C123456",
+            "text": "Hello, bot!",
+            "timestamp": "1234567890.123456"
+        }
+    
+    @patch('limp.api.im.get_config')
+    @patch('limp.api.im.get_or_create_user')
+    @patch('limp.api.im.get_or_create_conversation')
+    @patch('limp.api.im.store_user_message')
+    @patch('limp.api.im.get_conversation_history')
+    @patch('limp.api.im.store_assistant_message')
+    @patch('limp.api.im.process_llm_workflow')
+    @patch('limp.api.im.is_duplicate_message')
+    @patch('limp.api.im.generate_slack_message_id')
+    @pytest.mark.asyncio
+    async def test_handle_user_message_successful_finish_reason_stop(self, mock_generate_id, mock_is_duplicate, mock_process_llm_workflow, mock_store_assistant_message, mock_get_conversation_history, mock_store_user_message, mock_get_or_create_conversation, mock_get_user, mock_get_config):
+        """Test that finish_reason 'stop' is marked as successful."""
+        # Mock duplicate detection
+        mock_is_duplicate.return_value = False
+        mock_generate_id.return_value = "test_external_id"
+        
+        # Mock config with no primary system
+        mock_config = Mock()
+        mock_config.get_primary_system.return_value = None
+        mock_config.llm = Mock()
+        mock_config.llm.base_url = "https://api.openai.com/v1"
+        mock_config.llm.api_key = "test-key"
+        mock_config.llm.model = "gpt-4"
+        mock_config.llm.max_tokens = 1000
+        mock_config.llm.temperature = 0.7
+        mock_config.llm.max_iterations = 3
+        mock_config.external_systems = []
+        mock_config.bot = Mock()
+        mock_config.bot.system_prompts = []
+        mock_config.bot.url = "http://localhost:8000"
+        mock_get_config.return_value = mock_config
+        
+        # Mock user creation
+        mock_get_user.return_value = self.mock_user
+        
+        # Mock conversation management
+        mock_conversation = Mock()
+        mock_conversation.id = 1
+        mock_get_or_create_conversation.return_value = mock_conversation
+        mock_get_conversation_history.return_value = []
+        mock_store_user_message.return_value = Mock()
+        mock_store_assistant_message.return_value = Mock()
+        
+        # Mock LLM workflow with successful finish_reason
+        mock_process_llm_workflow.return_value = {
+            "content": "Test response",
+            "finish_reason": "stop"
+        }
+        
+        # Mock IM service
+        self.mock_im_service.acknowledge_message.return_value = None
+        self.mock_im_service.reply_to_message.return_value = True
+        self.mock_im_service.complete_message.return_value = None
+        
+        # Call the function
+        result = await handle_user_message(
+            self.message_data,
+            self.mock_im_service,
+            self.mock_db_session,
+            "slack"
+        )
+        
+        # Verify success
+        assert result["status"] == "ok"
+        self.mock_im_service.complete_message.assert_called_once_with(
+            "C123456",
+            "1234567890.123456",
+            success=True
+        )
+    
+    @patch('limp.api.im.get_config')
+    @patch('limp.api.im.get_or_create_user')
+    @patch('limp.api.im.get_or_create_conversation')
+    @patch('limp.api.im.store_user_message')
+    @patch('limp.api.im.get_conversation_history')
+    @patch('limp.api.im.store_assistant_message')
+    @patch('limp.api.im.process_llm_workflow')
+    @patch('limp.api.im.is_duplicate_message')
+    @patch('limp.api.im.generate_slack_message_id')
+    @pytest.mark.asyncio
+    async def test_handle_user_message_failed_finish_reason_length(self, mock_generate_id, mock_is_duplicate, mock_process_llm_workflow, mock_store_assistant_message, mock_get_conversation_history, mock_store_user_message, mock_get_or_create_conversation, mock_get_user, mock_get_config):
+        """Test that finish_reason 'length' is marked as failed."""
+        # Mock duplicate detection
+        mock_is_duplicate.return_value = False
+        mock_generate_id.return_value = "test_external_id"
+        
+        # Mock config with no primary system
+        mock_config = Mock()
+        mock_config.get_primary_system.return_value = None
+        mock_config.llm = Mock()
+        mock_config.llm.base_url = "https://api.openai.com/v1"
+        mock_config.llm.api_key = "test-key"
+        mock_config.llm.model = "gpt-4"
+        mock_config.llm.max_tokens = 1000
+        mock_config.llm.temperature = 0.7
+        mock_config.llm.max_iterations = 3
+        mock_config.external_systems = []
+        mock_config.bot = Mock()
+        mock_config.bot.system_prompts = []
+        mock_config.bot.url = "http://localhost:8000"
+        mock_get_config.return_value = mock_config
+        
+        # Mock user creation
+        mock_get_user.return_value = self.mock_user
+        
+        # Mock conversation management
+        mock_conversation = Mock()
+        mock_conversation.id = 1
+        mock_get_or_create_conversation.return_value = mock_conversation
+        mock_get_conversation_history.return_value = []
+        mock_store_user_message.return_value = Mock()
+        mock_store_assistant_message.return_value = Mock()
+        
+        # Mock LLM workflow with truncated finish_reason
+        mock_process_llm_workflow.return_value = {
+            "content": "Test response [truncated]",
+            "finish_reason": "length"
+        }
+        
+        # Mock IM service
+        self.mock_im_service.acknowledge_message.return_value = None
+        self.mock_im_service.reply_to_message.return_value = True
+        self.mock_im_service.complete_message.return_value = None
+        
+        # Call the function
+        result = await handle_user_message(
+            self.message_data,
+            self.mock_im_service,
+            self.mock_db_session,
+            "slack"
+        )
+        
+        # Verify failure
+        assert result["status"] == "ok"
+        self.mock_im_service.complete_message.assert_called_once_with(
+            "C123456",
+            "1234567890.123456",
+            success=False
+        )
+    
+    @patch('limp.api.im.get_config')
+    @patch('limp.api.im.get_or_create_user')
+    @patch('limp.api.im.get_or_create_conversation')
+    @patch('limp.api.im.store_user_message')
+    @patch('limp.api.im.get_conversation_history')
+    @patch('limp.api.im.store_assistant_message')
+    @patch('limp.api.im.process_llm_workflow')
+    @patch('limp.api.im.is_duplicate_message')
+    @patch('limp.api.im.generate_slack_message_id')
+    @pytest.mark.asyncio
+    async def test_handle_user_message_failed_finish_reason_tool_calls(self, mock_generate_id, mock_is_duplicate, mock_process_llm_workflow, mock_store_assistant_message, mock_get_conversation_history, mock_store_user_message, mock_get_or_create_conversation, mock_get_user, mock_get_config):
+        """Test that finish_reason 'tool_calls' is marked as failed for final messages."""
+        # Mock duplicate detection
+        mock_is_duplicate.return_value = False
+        mock_generate_id.return_value = "test_external_id"
+        
+        # Mock config with no primary system
+        mock_config = Mock()
+        mock_config.get_primary_system.return_value = None
+        mock_config.llm = Mock()
+        mock_config.llm.base_url = "https://api.openai.com/v1"
+        mock_config.llm.api_key = "test-key"
+        mock_config.llm.model = "gpt-4"
+        mock_config.llm.max_tokens = 1000
+        mock_config.llm.temperature = 0.7
+        mock_config.llm.max_iterations = 3
+        mock_config.external_systems = []
+        mock_config.bot = Mock()
+        mock_config.bot.system_prompts = []
+        mock_config.bot.url = "http://localhost:8000"
+        mock_get_config.return_value = mock_config
+        
+        # Mock user creation
+        mock_get_user.return_value = self.mock_user
+        
+        # Mock conversation management
+        mock_conversation = Mock()
+        mock_conversation.id = 1
+        mock_get_or_create_conversation.return_value = mock_conversation
+        mock_get_conversation_history.return_value = []
+        mock_store_user_message.return_value = Mock()
+        mock_store_assistant_message.return_value = Mock()
+        
+        # Mock LLM workflow with tool_calls finish_reason (should be failed for final message)
+        mock_process_llm_workflow.return_value = {
+            "content": "Test response",
+            "finish_reason": "tool_calls"
+        }
+        
+        # Mock IM service
+        self.mock_im_service.acknowledge_message.return_value = None
+        self.mock_im_service.reply_to_message.return_value = True
+        self.mock_im_service.complete_message.return_value = None
+        
+        # Call the function
+        result = await handle_user_message(
+            self.message_data,
+            self.mock_im_service,
+            self.mock_db_session,
+            "slack"
+        )
+        
+        # Verify failure
+        assert result["status"] == "ok"
+        self.mock_im_service.complete_message.assert_called_once_with(
+            "C123456",
+            "1234567890.123456",
+            success=False
+        )
+    
+    @patch('limp.api.im.get_config')
+    @patch('limp.api.im.get_or_create_user')
+    @patch('limp.api.im.get_or_create_conversation')
+    @patch('limp.api.im.store_user_message')
+    @patch('limp.api.im.get_conversation_history')
+    @patch('limp.api.im.store_assistant_message')
+    @patch('limp.api.im.process_llm_workflow')
+    @patch('limp.api.im.is_duplicate_message')
+    @patch('limp.api.im.generate_slack_message_id')
+    @pytest.mark.asyncio
+    async def test_handle_user_message_backward_compatibility_none_finish_reason(self, mock_generate_id, mock_is_duplicate, mock_process_llm_workflow, mock_store_assistant_message, mock_get_conversation_history, mock_store_user_message, mock_get_or_create_conversation, mock_get_user, mock_get_config):
+        """Test that None finish_reason is marked as successful for backward compatibility."""
+        # Mock duplicate detection
+        mock_is_duplicate.return_value = False
+        mock_generate_id.return_value = "test_external_id"
+        
+        # Mock config with no primary system
+        mock_config = Mock()
+        mock_config.get_primary_system.return_value = None
+        mock_config.llm = Mock()
+        mock_config.llm.base_url = "https://api.openai.com/v1"
+        mock_config.llm.api_key = "test-key"
+        mock_config.llm.model = "gpt-4"
+        mock_config.llm.max_tokens = 1000
+        mock_config.llm.temperature = 0.7
+        mock_config.llm.max_iterations = 3
+        mock_config.external_systems = []
+        mock_config.bot = Mock()
+        mock_config.bot.system_prompts = []
+        mock_config.bot.url = "http://localhost:8000"
+        mock_get_config.return_value = mock_config
+        
+        # Mock user creation
+        mock_get_user.return_value = self.mock_user
+        
+        # Mock conversation management
+        mock_conversation = Mock()
+        mock_conversation.id = 1
+        mock_get_or_create_conversation.return_value = mock_conversation
+        mock_get_conversation_history.return_value = []
+        mock_store_user_message.return_value = Mock()
+        mock_store_assistant_message.return_value = Mock()
+        
+        # Mock LLM workflow with None finish_reason (backward compatibility)
+        mock_process_llm_workflow.return_value = {
+            "content": "Test response",
+            "finish_reason": None
+        }
+        
+        # Mock IM service
+        self.mock_im_service.acknowledge_message.return_value = None
+        self.mock_im_service.reply_to_message.return_value = True
+        self.mock_im_service.complete_message.return_value = None
+        
+        # Call the function
+        result = await handle_user_message(
+            self.message_data,
+            self.mock_im_service,
+            self.mock_db_session,
+            "slack"
+        )
+        
+        # Verify success (backward compatibility)
+        assert result["status"] == "ok"
+        self.mock_im_service.complete_message.assert_called_once_with(
+            "C123456",
+            "1234567890.123456",
+            success=True
+        )
