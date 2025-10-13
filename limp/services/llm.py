@@ -69,10 +69,10 @@ class LLMService:
                 if not content.rstrip().endswith(('.', '!', '?', ':', ';')):
                     content = content.rstrip() + "..."
                 truncated_message = "\n\n[Response was truncated due to length limits. The response was too long to fit within the token limit. Consider asking for a shorter response or breaking your question into smaller parts.]"
+                content += truncated_message
             else:
                 # No content available - this is the common case with length truncation
                 content = "[Response was truncated due to length limits. The response was too long to fit within the token limit. Consider asking for a shorter response or breaking your question into smaller parts.]"
-            content += truncated_message
         else:
             content = response.choices[0].message.content
         
