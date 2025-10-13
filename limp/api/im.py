@@ -153,22 +153,28 @@ async def handle_user_message(
             message_data.get("timestamp"),  # Use the original message timestamp
             response.get("metadata")
         )
-        
-        # Determine if the response was successful based on finish_reason
-        finish_reason = response.get("finish_reason")
-        
-        # Define successful finish reasons for final user messages
-        # "stop" - normal completion (the only successful reason for final responses)
-        # Note: "tool_calls" and "function_call" are not successful for final messages
-        # as they indicate the LLM wanted to make tool calls but couldn't
-        successful_finish_reasons = {"stop"}
-        
-        # Consider the response successful if finish_reason is in successful reasons
-        # or if finish_reason is None/not provided (backward compatibility)
-        is_successful = (
-            finish_reason is None or 
-            finish_reason in successful_finish_reasons
-        )
+
+        if response.get("metadata", {}).get("error", False):
+            is_successful = False
+        else:
+            is_successful = True
+
+        if is_successful:
+            # Determine if the response was successful based on finish_reason
+            finish_reason = response.get("finish_reason")
+            
+            # Define successful finish reasons for final user messages
+            # "stop" - normal completion (the only successful reason for final responses)
+            # Note: "tool_calls" and "function_call" are not successful for final messages
+            # as they indicate the LLM wanted to make tool calls but couldn't
+            successful_finish_reasons = {"stop"}
+            
+            # Consider the response successful if finish_reason is in successful reasons
+            # or if finish_reason is None/not provided (backward compatibility)
+            is_successful = is_successful and (
+                finish_reason is None or 
+                finish_reason in successful_finish_reasons
+            )
         
         # Complete the message with success status
         im_service.complete_message(
@@ -233,7 +239,7 @@ async def process_llm_workflow(
         # Iterative tool calling loop
         while iteration < max_iterations:
             # Send to LLM
-            response = llm_service.chat_completion(messages, tools)
+            response = llm_service.chat_completion(messages, tools, stream=True)
             
             # Check for tool calls
             if llm_service.is_tool_call_response(response):
