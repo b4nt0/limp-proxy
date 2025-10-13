@@ -364,16 +364,6 @@ async def process_llm_workflow(
                         if response_temp_id:
                             temporary_message_ids.append(response_temp_id)
                 
-                # Optimize messages to keep only the latest successful tool call
-                # This prevents context bloat during iterative tool calling
-                from limp.services.context import ContextManager
-                context_manager = ContextManager(config.llm)
-                messages = context_manager.optimize_messages_for_tool_calls(messages)
-                
-                # Optimize tool system prompts to keep only the latest ones
-                # and only if the latest message is a tool response
-                messages = context_manager.optimize_tool_system_prompts(messages)
-                
                 # Inject tool-specific system prompts for the next LLM call
                 # This provides context about the tool outputs for the next iteration
                 tool_system_prompts = {}
