@@ -5,9 +5,12 @@ Tests for configuration management.
 import pytest
 import tempfile
 import yaml
+import os
 from pathlib import Path
+from datetime import datetime
 
 from limp.config import Config, load_config, DatabaseConfig, LLMConfig, OAuth2Config, ExternalSystemConfig
+from limp.config.config import substitute_variables, _get_builtin_variable, _substitute_config_values
 
 
 def test_database_config_defaults():

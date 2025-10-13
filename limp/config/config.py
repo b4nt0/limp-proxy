@@ -4,7 +4,9 @@ Configuration management for LIMP system.
 
 import os
 import yaml
-from typing import Dict, List, Optional, Any
+import re
+from datetime import datetime
+from typing import Dict, List, Optional, Any, Union
 from pathlib import Path
 from pydantic import BaseModel, Field
 try:
@@ -139,8 +141,106 @@ class Config(BaseModel):
         raise ValueError(f"IM platform '{platform_key}' not found. Available platforms: {available_platforms}")
 
 
-def load_config(config_path: str) -> Config:
-    """Load configuration from YAML file."""
+def substitute_variables(value: Any, env_config: Optional['EnvironmentConfig'] = None) -> Any:
+    """
+    Substitute variables in configuration values.
+    
+    Variable format: ${variable_name}
+    Priority order:
+    1. .env file variables
+    2. Environment variables
+    3. Built-in variables
+    4. None if not found
+    
+    Args:
+        value: Configuration value that may contain variables
+        env_config: Environment configuration instance
+        
+    Returns:
+        Value with variables substituted
+    """
+    if not isinstance(value, str):
+        return value
+    
+    # Pattern to match ${variable_name} - allows empty variable names
+    variable_pattern = r'\$\{([^}]*)\}'
+    
+    def replace_variable(match):
+        variable_name = match.group(1)
+        
+        # Handle empty variable name
+        if not variable_name.strip():
+            return ""
+        
+        # 1. Check environment variables (highest priority)
+        env_value = os.getenv(variable_name)
+        if env_value is not None:
+            return env_value
+        
+        # 2. Check .env file (if env_config is provided)
+        if env_config:
+            env_value = env_config.get(variable_name)
+            if env_value is not None:
+                return env_value
+        
+        # 3. Check built-in variables
+        builtin_value = _get_builtin_variable(variable_name)
+        if builtin_value is not None:
+            return builtin_value
+        
+        # 4. Return empty string if not found
+        return ""
+    
+    # Replace all variables in the string
+    result = re.sub(variable_pattern, replace_variable, value)
+    
+    # If the result contains None (as string), convert it to actual None
+    if result == "None":
+        return None
+    
+    return result
+
+
+def _get_builtin_variable(variable_name: str) -> Optional[str]:
+    """
+    Get built-in variable value.
+    
+    Args:
+        variable_name: Name of the variable
+        
+    Returns:
+        Variable value or None if not found
+    """
+    builtin_variables = {
+        'today': datetime.now().strftime('%Y-%m-%d')
+    }
+    
+    return builtin_variables.get(variable_name)
+
+
+def _substitute_config_values(config_data: Dict[str, Any], env_config: Optional['EnvironmentConfig'] = None) -> Dict[str, Any]:
+    """
+    Recursively substitute variables in configuration data.
+    
+    Args:
+        config_data: Configuration dictionary
+        env_config: Environment configuration instance
+        
+    Returns:
+        Configuration dictionary with variables substituted
+    """
+    if isinstance(config_data, dict):
+        return {key: _substitute_config_values(value, env_config) for key, value in config_data.items()}
+    elif isinstance(config_data, list):
+        return [_substitute_config_values(item, env_config) for item in config_data]
+    elif isinstance(config_data, str):
+        return substitute_variables(config_data, env_config)
+    else:
+        return config_data
+
+
+def load_config(config_path: str, env_config: Optional['EnvironmentConfig'] = None) -> Config:
+    """Load configuration from YAML file with variable substitution."""
     config_file = Path(config_path)
     
     if not config_file.exists():
@@ -148,6 +248,13 @@ def load_config(config_path: str) -> Config:
     
     with open(config_file, 'r') as f:
         config_data = yaml.safe_load(f)
+    
+    # Use provided env_config or get the global one
+    if env_config is None:
+        env_config = get_env_config()
+    
+    # Substitute variables in the configuration data
+    config_data = _substitute_config_values(config_data, env_config)
     
     config = Config(**config_data)
     
@@ -226,6 +333,7 @@ class EnvironmentConfig:
         
         # Return default if not found anywhere
         return default
+    
     
     def get_config_path(self) -> str:
         """
