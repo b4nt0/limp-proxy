@@ -635,3 +635,159 @@ class TestToolsService:
         # Should not raise exception, but log error
         tools = self.tools_service.get_available_tools(system_configs)
         assert tools == []
+
+
+def test_streaming_vs_non_streaming_tool_call_format_consistency():
+    """Regression test: Ensure streaming and non-streaming responses return tool calls in the same format."""
+    config = LLMConfig(api_key="test-key")
+    service = LLMService(config)
+    
+    # Create mock tool call objects that simulate the OpenAI API response format
+    def create_mock_tool_call(tool_id, function_name, arguments):
+        mock_tool_call = Mock()
+        mock_tool_call.id = tool_id
+        mock_tool_call.type = "function"
+        mock_tool_call.function.name = function_name
+        mock_tool_call.function.arguments = arguments
+        return mock_tool_call
+    
+    # Test non-streaming response format (original format)
+    non_streaming_tool_call = create_mock_tool_call("call_123", "test_function", '{"arg1": "value1"}')
+    non_streaming_response = {
+        "content": "Non-streaming response",
+        "tool_calls": [non_streaming_tool_call],
+        "finish_reason": "tool_calls",
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+    }
+    
+    # Test streaming response format (should now match non-streaming format)
+    # This simulates what _handle_streaming_response now returns after the fix
+    streaming_tool_call = type('ToolCall', (), {})()
+    streaming_tool_call.id = "call_456"
+    streaming_tool_call.type = "function"
+    
+    mock_function = type('Function', (), {})()
+    mock_function.name = "streaming_function"
+    mock_function.arguments = '{"arg2": "value2"}'
+    streaming_tool_call.function = mock_function
+    
+    streaming_response = {
+        "content": "Streaming response",
+        "tool_calls": [streaming_tool_call],
+        "finish_reason": "tool_calls",
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+    }
+    
+    # Extract tool calls from both responses
+    non_streaming_extracted = service.extract_tool_calls(non_streaming_response)
+    streaming_extracted = service.extract_tool_calls(streaming_response)
+    
+    # Verify both extractions work (no exceptions)
+    assert len(non_streaming_extracted) == 1
+    assert len(streaming_extracted) == 1
+    
+    # Verify the extracted format is identical for both
+    non_streaming_tool = non_streaming_extracted[0]
+    streaming_tool = streaming_extracted[0]
+    
+    # Both should have the same structure
+    assert "id" in non_streaming_tool
+    assert "type" in non_streaming_tool
+    assert "function" in non_streaming_tool
+    assert "name" in non_streaming_tool["function"]
+    assert "arguments" in non_streaming_tool["function"]
+    
+    assert "id" in streaming_tool
+    assert "type" in streaming_tool
+    assert "function" in streaming_tool
+    assert "name" in streaming_tool["function"]
+    assert "arguments" in streaming_tool["function"]
+    
+    # Verify specific values
+    assert non_streaming_tool["id"] == "call_123"
+    assert non_streaming_tool["type"] == "function"
+    assert non_streaming_tool["function"]["name"] == "test_function"
+    assert non_streaming_tool["function"]["arguments"] == '{"arg1": "value1"}'
+    
+    assert streaming_tool["id"] == "call_456"
+    assert streaming_tool["type"] == "function"
+    assert streaming_tool["function"]["name"] == "streaming_function"
+    assert streaming_tool["function"]["arguments"] == '{"arg2": "value2"}'
+    
+    # Verify both responses are detected as tool call responses
+    assert service.is_tool_call_response(non_streaming_response) == True
+    assert service.is_tool_call_response(streaming_response) == True
+
+
+def test_streaming_tool_call_object_attributes():
+    """Test that streaming tool calls have the correct object attributes for extract_tool_calls."""
+    config = LLMConfig(api_key="test-key")
+    service = LLMService(config)
+    
+    # Create a streaming-style tool call object (as returned by _handle_streaming_response after fix)
+    streaming_tool_call = type('ToolCall', (), {})()
+    streaming_tool_call.id = "call_streaming_123"
+    streaming_tool_call.type = "function"
+    
+    mock_function = type('Function', (), {})()
+    mock_function.name = "streaming_test_function"
+    mock_function.arguments = '{"param": "value"}'
+    streaming_tool_call.function = mock_function
+    
+    streaming_response = {
+        "content": "Streaming response with tool call",
+        "tool_calls": [streaming_tool_call],
+        "finish_reason": "tool_calls",
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+    }
+    
+    # This should not raise an AttributeError
+    extracted_tool_calls = service.extract_tool_calls(streaming_response)
+    
+    assert len(extracted_tool_calls) == 1
+    tool_call = extracted_tool_calls[0]
+    
+    # Verify the extracted tool call has the expected structure
+    assert tool_call["id"] == "call_streaming_123"
+    assert tool_call["type"] == "function"
+    assert tool_call["function"]["name"] == "streaming_test_function"
+    assert tool_call["function"]["arguments"] == '{"param": "value"}'
+
+
+def test_multiple_streaming_tool_calls():
+    """Test that multiple tool calls in streaming response work correctly."""
+    config = LLMConfig(api_key="test-key")
+    service = LLMService(config)
+    
+    # Create multiple streaming tool calls
+    tool_calls = []
+    for i in range(3):
+        tool_call = type('ToolCall', (), {})()
+        tool_call.id = f"call_streaming_{i}"
+        tool_call.type = "function"
+        
+        mock_function = type('Function', (), {})()
+        mock_function.name = f"function_{i}"
+        mock_function.arguments = f'{{"param_{i}": "value_{i}"}}'
+        tool_call.function = mock_function
+        
+        tool_calls.append(tool_call)
+    
+    streaming_response = {
+        "content": "Streaming response with multiple tool calls",
+        "tool_calls": tool_calls,
+        "finish_reason": "tool_calls",
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+    }
+    
+    # Extract all tool calls
+    extracted_tool_calls = service.extract_tool_calls(streaming_response)
+    
+    assert len(extracted_tool_calls) == 3
+    
+    # Verify each tool call
+    for i, tool_call in enumerate(extracted_tool_calls):
+        assert tool_call["id"] == f"call_streaming_{i}"
+        assert tool_call["type"] == "function"
+        assert tool_call["function"]["name"] == f"function_{i}"
+        assert tool_call["function"]["arguments"] == f'{{"param_{i}": "value_{i}"}}'

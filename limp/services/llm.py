@@ -112,19 +112,22 @@ class LLMService:
                                 # Continue existing tool call
                                 if tool_call.function:
                                     if tool_call.function.name:
-                                        tool_calls[tool_call.index]["function"]["name"] = tool_call.function.name
+                                        tool_calls[tool_call.index].function.name = tool_call.function.name
                                     if tool_call.function.arguments:
-                                        tool_calls[tool_call.index]["function"]["arguments"] += tool_call.function.arguments
+                                        tool_calls[tool_call.index].function.arguments += tool_call.function.arguments
                             else:
-                                # Start new tool call
-                                tool_calls.append({
-                                    "id": tool_call.id,
-                                    "type": tool_call.type,
-                                    "function": {
-                                        "name": tool_call.function.name or "",
-                                        "arguments": tool_call.function.arguments or ""
-                                    }
-                                })
+                                # Start new tool call - create a mock object to match non-streaming format
+                                mock_tool_call = type('ToolCall', (), {})()
+                                mock_tool_call.id = tool_call.id
+                                mock_tool_call.type = tool_call.type
+                                
+                                # Create function object
+                                mock_function = type('Function', (), {})()
+                                mock_function.name = tool_call.function.name or ""
+                                mock_function.arguments = tool_call.function.arguments or ""
+                                
+                                mock_tool_call.function = mock_function
+                                tool_calls.append(mock_tool_call)
                     
                     # Track finish reason
                     if choice.finish_reason:
@@ -148,7 +151,7 @@ class LLMService:
                     content += "\n\n[Response was truncated due to length limits. The response was too long to fit within the token limit.]"
                 else:
                     content = "[Response was truncated due to length limits. The response was too long to fit within the token limit.]"
-            
+
             return {
                 "content": content,
                 "tool_calls": tool_calls if tool_calls else None,
@@ -329,19 +332,22 @@ class LLMService:
                                 # Continue existing tool call
                                 if tool_call.function:
                                     if tool_call.function.name:
-                                        tool_calls[tool_call.index]["function"]["name"] = tool_call.function.name
+                                        tool_calls[tool_call.index].function.name = tool_call.function.name
                                     if tool_call.function.arguments:
-                                        tool_calls[tool_call.index]["function"]["arguments"] += tool_call.function.arguments
+                                        tool_calls[tool_call.index].function.arguments += tool_call.function.arguments
                             else:
-                                # Start new tool call
-                                tool_calls.append({
-                                    "id": tool_call.id,
-                                    "type": tool_call.type,
-                                    "function": {
-                                        "name": tool_call.function.name or "",
-                                        "arguments": tool_call.function.arguments or ""
-                                    }
-                                })
+                                # Start new tool call - create a mock object to match non-streaming format
+                                mock_tool_call = type('ToolCall', (), {})()
+                                mock_tool_call.id = tool_call.id
+                                mock_tool_call.type = tool_call.type
+                                
+                                # Create function object
+                                mock_function = type('Function', (), {})()
+                                mock_function.name = tool_call.function.name or ""
+                                mock_function.arguments = tool_call.function.arguments or ""
+                                
+                                mock_tool_call.function = mock_function
+                                tool_calls.append(mock_tool_call)
                     
                     # Track finish reason
                     if choice.finish_reason:
