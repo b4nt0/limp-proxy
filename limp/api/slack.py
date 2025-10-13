@@ -324,15 +324,20 @@ async def handle_slack_webhook(request: Request, db: Session = Depends(get_sessi
                 logger.info(f"Ignoring message from own app_id: {slack_config.app_id} (early filtering)")
                 return {"status": "ignored"}
             
-            # EARLY SCREENING: Filter out bot messages and other inactionable events
-            if event.get("type") in ["message", "app_mention"] and event.get("bot_id"):
-                logger.info(f"Ignoring message from bot (bot_id: {event.get('bot_id')}) (early filtering)")
-                return {"status": "ignored"}
-            
             # EARLY SCREENING: Filter out non-message events that we don't handle
             if event.get("type") not in ["message", "app_mention"]:
                 logger.info(f"Ignoring non-message event type: {event.get('type')} (early filtering)")
                 return {"status": "ignored"}
+
+            # EARLY SCREENING: Filter out bot messages and other inactionable events
+            if event.get("bot_id"):
+                logger.info(f"Ignoring message from bot (bot_id: {event.get('bot_id')}) (early filtering)")
+                return {"status": "ignored"}
+            
+            if not event.get("text", None) or not event.get("user", None):
+                logger.info(f"Ignoring an empty message (early filtering)")
+                return {"status": "ignored"}
+
         
         # EARLY SCREENING: Filter out non-event-callback requests that aren't challenges
         if request_data.get("type") not in ["url_verification", "event_callback"]:
