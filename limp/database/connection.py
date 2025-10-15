@@ -69,6 +69,8 @@ def init_database(engine):
             logger.info("Created in-memory database tables successfully")
         else:        
             alembic_cfg = AlembicConfig("alembic.ini")
+            # Set the database URL from the engine to override the hardcoded one in alembic.ini
+            alembic_cfg.set_main_option("sqlalchemy.url", str(engine.url))
             command.upgrade(alembic_cfg, "head")
             logger.info("Database migrations applied successfully")
     except Exception as e:
