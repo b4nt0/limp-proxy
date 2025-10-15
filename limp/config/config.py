@@ -145,12 +145,16 @@ def substitute_variables(value: Any, env_config: Optional['EnvironmentConfig'] =
     """
     Substitute variables in configuration values.
     
-    Variable format: ${variable_name}
+    Variable formats:
+    - ${variable_name} - standard variable substitution
+    - ${variable_name|default_value} - variable with default fallback
+    
     Priority order:
-    1. .env file variables
-    2. Environment variables
+    1. Environment variables (highest priority)
+    2. .env file variables
     3. Built-in variables
-    4. None if not found
+    4. Default value (if specified with | syntax)
+    5. Empty string if not found
     
     Args:
         value: Configuration value that may contain variables
@@ -162,15 +166,24 @@ def substitute_variables(value: Any, env_config: Optional['EnvironmentConfig'] =
     if not isinstance(value, str):
         return value
     
-    # Pattern to match ${variable_name} - allows empty variable names
+    # Pattern to match ${variable_name} or ${variable_name|default_value}
     variable_pattern = r'\$\{([^}]*)\}'
     
     def replace_variable(match):
-        variable_name = match.group(1)
+        variable_content = match.group(1)
         
         # Handle empty variable name
-        if not variable_name.strip():
+        if not variable_content.strip():
             return ""
+        
+        # Check if variable has default value syntax: variable_name|default_value
+        if '|' in variable_content:
+            variable_name, default_value = variable_content.split('|', 1)
+            variable_name = variable_name.strip()
+            default_value = default_value.strip()
+        else:
+            variable_name = variable_content
+            default_value = None
         
         # 1. Check environment variables (highest priority)
         env_value = os.getenv(variable_name)
@@ -188,7 +201,11 @@ def substitute_variables(value: Any, env_config: Optional['EnvironmentConfig'] =
         if builtin_value is not None:
             return builtin_value
         
-        # 4. Return empty string if not found
+        # 4. Return default value if specified
+        if default_value is not None:
+            return default_value
+        
+        # 5. Return empty string if not found
         return ""
     
     # Replace all variables in the string
@@ -196,6 +213,10 @@ def substitute_variables(value: Any, env_config: Optional['EnvironmentConfig'] =
     
     # If the result contains None (as string), convert it to actual None
     if result == "None":
+        return None
+    
+    # If the result is empty string, return None to allow Pydantic defaults
+    if result == "":
         return None
     
     return result
@@ -230,7 +251,13 @@ def _substitute_config_values(config_data: Dict[str, Any], env_config: Optional[
         Configuration dictionary with variables substituted
     """
     if isinstance(config_data, dict):
-        return {key: _substitute_config_values(value, env_config) for key, value in config_data.items()}
+        result = {}
+        for key, value in config_data.items():
+            substituted_value = _substitute_config_values(value, env_config)
+            # Only include the key if the value is not None (omit None values)
+            if substituted_value is not None:
+                result[key] = substituted_value
+        return result
     elif isinstance(config_data, list):
         return [_substitute_config_values(item, env_config) for item in config_data]
     elif isinstance(config_data, str):

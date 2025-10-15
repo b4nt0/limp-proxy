@@ -230,7 +230,7 @@ class SlackService(IMService):
     def create_authorization_button(self, auth_url: str, button_text: str, button_description: str, request=None) -> List[Dict[str, Any]]:
         """Create authorization button blocks for Slack."""
         # Check if URL is localhost (Slack doesn't like localhost URLs in buttons)
-        is_localhost = "localhost" in auth_url or "127.0.0.1" in auth_url
+        is_localhost = "localhost" in auth_url or "127.0.0.1" in auth_url or "host.docker.internal" in auth_url
         
         if is_localhost:
             # Use hyperlink for localhost URLs

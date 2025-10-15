@@ -1,69 +1,61 @@
 # LIMP Configuration File
 
 bot:
-  name: "LIMP"
-  url: ""
-  debug: false
+  name: "${LIMP_SYSTEM_NAME|LIMP}"
+  url: "${LIMP_SYSTEM_URL}"
+  debug: "${LIMP_SYSTEM_DEBUG|false}"
   system_prompts:
-    - "You are a helpful AI assistant that can help users interact with external systems."
+    - "${LIMP_SYSTEM_PROMPT|You are a helpful AI assistant that can help users interact with external systems.}"
     - Today's date (YYYY-MM-DD) is ${today}.
-    - "Always be polite and professional in your responses."
-    - "If you need to access external systems, ask the user to authorize access first."
+    - "${LIMP_SYSTEM_PROMPT_2|Always be polite and professional in your responses.}"
+    - "${LIMP_SYSTEM_PROMPT_3|If you need to access external systems, ask the user to authorize access first.}"
+    - "${LIMP_SYSTEM_PROMPT_4}"
+    - "${LIMP_SYSTEM_PROMPT_5}"
+    - "${LIMP_SYSTEM_PROMPT_6}"
+    - "${LIMP_SYSTEM_PROMPT_7}"
+    - "${LIMP_SYSTEM_PROMPT_8}"
+    - "${LIMP_SYSTEM_PROMPT_9}"
 
 database:
-  url: "sqlite:///./limp.db"
+  url: "${DATABASE_URL|sqlite:///./limp.db}"
   echo: false
 
 llm:
   provider: "openai"
-  api_key: "your-openai-api-key-here"
-  model: "gpt-4"
-  max_tokens: 4000
+  api_key: "${OPENAI_API_KEY}"
+  model: "${OPENAI_MODEL|gpt-5-mini}"
+  max_tokens: "${OPENAI_MAX_TOKENS|4096}"
   temperature: 0.7
-  max_iterations: 8
+  max_iterations: ${LIMP_SYSTEM_MAX_ITERATIONS|12}
   # Context management settings
-  context_threshold: 0.75  # Trigger summarization when context is 75% full
-  context_window_size: null  # Auto-detect from OpenAI API
-  summary_max_tokens: 2048  # Maximum tokens for conversation summaries
+  context_threshold: ${LIMP_SYSTEM_CONTEXT_THRESHOLD|0.75}
+  context_window_size: ${LIMP_SYSTEM_CONTEXT_WINDOW_SIZE}
+  summary_max_tokens: ${LIMP_SYSTEM_SUMMARY_MAX_TOKENS|4096}
 
 external_systems:
-  - name: "example-system"
+  - name: "${EXTERNAL_SYSTEM_NAME|example-system}"
     primary: true
     oauth2:
-      client_id: "your-client-id"
-      client_secret: "your-client-secret"
-      authorization_url: "https://example.com/oauth/authorize"
-      token_url: "https://example.com/oauth/token"
-      scope: "read write"
-      test_endpoint: "https://example.com/oauth/introspect"  # Optional: for token validation
-    openapi_spec: "https://example.com/api/openapi.json"
-    base_url: "https://example.com/api"
+      client_id: "${EXTERNAL_SYSTEM_OAUTH2_CLIENT_ID}"
+      client_secret: "${EXTERNAL_SYSTEM_OAUTH2_CLIENT_SECRET}"
+      authorization_url: "${EXTERNAL_SYSTEM_OAUTH2_AUTHORIZATION_URL}"
+      token_url: "${EXTERNAL_SYSTEM_OAUTH2_TOKEN_URL}"
+      scope: "${EXTERNAL_SYSTEM_OAUTH2_SCOPE|read write}"
+      test_endpoint: "${EXTERNAL_SYSTEM_OAUTH2_TEST_ENDPOINT}"
+    openapi_spec: "${EXTERNAL_SYSTEM_OPENAPI_SPEC}"
+    base_url: "${EXTERNAL_SYSTEM_BASE_URL}"
 
 im_platforms:
   - platform: "slack"
-    app_id: "your-slack-app-id"
-    client_id: "your-slack-client-id"
-    client_secret: "your-slack-client-secret"
-    signing_secret: "your-slack-signing-secret"
+    app_id: "${SLACK_APP_ID}"
+    client_id: "${SLACK_CLIENT_ID}"
+    client_secret: "${SLACK_CLIENT_SECRET}"
+    signing_secret: "${SLACK_SIGNING_SECRET}"
   
-  - platform: "teams"
-    app_id: "your-teams-app-id"
-    client_id: "your-teams-client-id"
-    client_secret: "your-teams-client-secret"
-    conversation_timeout_hours: 8
-
 admin:
-  enabled: true
-  username: "admin"
-  password: "admin123"
-
-alerts:
-  enabled: false
-  webhook_url: "https://your-webhook-url.com/alerts"
-
-prompts_dir: "./prompts"
-context_files_dir: "./context"
+  enabled: "${ADMIN_ENABLED|false}"
+  username: "${ADMIN_USERNAME}"
+  password: "${ADMIN_PASSWORD}"
 
 logging:
-  level: "INFO"
-
+  level: "${LIMP_SYSTEM_LOGGING_LEVEL|INFO}"

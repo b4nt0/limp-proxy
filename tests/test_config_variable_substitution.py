@@ -127,7 +127,7 @@ def test_substitute_variables_none_conversion():
     """Test that 'None' string is converted to actual None."""
     # Test with missing variable that should result in None
     result = substitute_variables("${MISSING_VAR}")
-    assert result == ""
+    assert result is None
     
     # Test with explicit None string
     result = substitute_variables("None")
@@ -238,8 +238,9 @@ def test_load_config_with_missing_variables():
     """Test loading configuration with missing variables."""
     config_data = {
         "llm": {
-            "api_key": "${MISSING_API_KEY}",
-            "model": "gpt-4"
+            "api_key": "test-key",  # Provide required field
+            "model": "gpt-4",
+            "context_window_size": "${MISSING_CONTEXT_WINDOW_SIZE}"  # Optional field that should be omitted
         },
         "database": {
             "url": "sqlite:///test.db"
@@ -253,8 +254,11 @@ def test_load_config_with_missing_variables():
     try:
         config = load_config(config_path)
         
-        # Missing variable should result in empty string
-        assert config.llm.api_key == ""
+        # Required field should be present
+        assert config.llm.api_key == "test-key"
+        assert config.llm.model == "gpt-4"
+        # Missing optional variable should be omitted, allowing Pydantic default
+        assert config.llm.context_window_size is None
         assert config.database.url == "sqlite:///test.db"
         
     finally:
@@ -508,11 +512,11 @@ def test_variable_substitution_edge_cases():
     """Test edge cases for variable substitution."""
     # Test empty variable name
     result = substitute_variables("${}")
-    assert result == ""
+    assert result is None
     
     # Test variable with spaces
     result = substitute_variables("${ VAR_WITH_SPACES }")
-    assert result == ""
+    assert result is None
     
     # Test nested braces (this is a complex case that may not be fully supported)
     result = substitute_variables("${${NESTED}}")
@@ -529,11 +533,11 @@ def test_variable_substitution_edge_cases():
     
     # Test variable with special characters
     result = substitute_variables("${VAR-WITH-DASH}")
-    assert result == ""
+    assert result is None
     
     # Test variable with underscores
     result = substitute_variables("${VAR_WITH_UNDERSCORES}")
-    assert result == ""
+    assert result is None
 
 
 def test_variable_substitution_performance():
@@ -668,3 +672,444 @@ def test_load_config_with_dotenv_file():
             
     finally:
         Path(env_path).unlink()
+
+
+def test_substitute_variables_with_default_values():
+    """Test variable substitution with default values."""
+    # Test with default value when variable is missing
+    result = substitute_variables("Value: ${MISSING_VAR|default_value}")
+    assert result == "Value: default_value"
+    
+    # Test with default value when variable exists in environment
+    os.environ['EXISTING_VAR'] = 'env_value'
+    try:
+        result = substitute_variables("Value: ${EXISTING_VAR|default_value}")
+        assert result == "Value: env_value"  # Environment should take priority
+    finally:
+        del os.environ['EXISTING_VAR']
+    
+    # Test with multiple variables with defaults
+    result = substitute_variables("First: ${MISSING1|first_default}, Second: ${MISSING2|second_default}")
+    assert result == "First: first_default, Second: second_default"
+
+
+def test_substitute_variables_default_value_priority():
+    """Test that environment variables take priority over default values."""
+    # Set environment variable
+    os.environ['PRIORITY_VAR'] = 'env_value'
+    
+    try:
+        # Environment should take priority over default
+        result = substitute_variables("Value: ${PRIORITY_VAR|default_value}")
+        assert result == "Value: env_value"
+        
+        # Test with .env file priority over default
+        from limp.config.config import EnvironmentConfig
+        env_config = EnvironmentConfig()
+        # Mock the .env file behavior by setting a value in env_config
+        # This is a bit tricky since we need to test the priority order
+        result = substitute_variables("Value: ${PRIORITY_VAR|default_value}", env_config)
+        assert result == "Value: env_value"  # Environment still takes priority
+        
+    finally:
+        del os.environ['PRIORITY_VAR']
+
+
+def test_substitute_variables_default_value_with_builtin():
+    """Test default value fallback with built-in variables."""
+    # Test that built-in variables take priority over defaults
+    result = substitute_variables("Date: ${today|2023-01-01}")
+    assert "Date:" in result
+    assert result != "Date: 2023-01-01"  # Should use built-in today, not default
+    
+    # Test with missing built-in variable (should use default)
+    result = substitute_variables("Missing: ${nonexistent_builtin|default_value}")
+    assert result == "Missing: default_value"
+
+
+def test_substitute_variables_default_value_data_types():
+    """Test default values with different data types."""
+    # String default
+    result = substitute_variables("String: ${MISSING_STR|hello}")
+    assert result == "String: hello"
+    
+    # Number default (as string)
+    result = substitute_variables("Number: ${MISSING_NUM|42}")
+    assert result == "Number: 42"
+    
+    # Boolean default (as string)
+    result = substitute_variables("Boolean: ${MISSING_BOOL|true}")
+    assert result == "Boolean: true"
+    
+    # Float default (as string)
+    result = substitute_variables("Float: ${MISSING_FLOAT|3.14}")
+    assert result == "Float: 3.14"
+    
+    # Empty string default
+    result = substitute_variables("Empty: ${MISSING_EMPTY|}")
+    assert result == "Empty: "
+    
+    # None default (as string)
+    result = substitute_variables("None: ${MISSING_NONE|None}")
+    assert result == "None: None"
+
+
+def test_substitute_variables_default_value_edge_cases():
+    """Test edge cases for default value syntax."""
+    # Test with pipe in default value
+    result = substitute_variables("Pipe: ${MISSING|value|with|pipes}")
+    assert result == "Pipe: value|with|pipes"
+    
+    # Test with empty variable name and default
+    result = substitute_variables("Empty: ${|default}")
+    assert result == "Empty: default"
+    
+    # Test with spaces around pipe
+    result = substitute_variables("Spaces: ${MISSING | default_value}")
+    assert result == "Spaces: default_value"
+    
+    # Test with multiple pipes (should split on first one)
+    result = substitute_variables("Multiple: ${MISSING|first|second}")
+    assert result == "Multiple: first|second"
+
+
+def test_substitute_variables_default_value_mixed_syntax():
+    """Test mixing default and non-default variable syntax."""
+    # Set one environment variable
+    os.environ['EXISTING_VAR'] = 'env_value'
+    
+    try:
+        result = substitute_variables("Existing: ${EXISTING_VAR}, Missing: ${MISSING_VAR|default}, Today: ${today}")
+        assert "Existing: env_value" in result
+        assert "Missing: default" in result
+        assert "Today:" in result
+        assert "${EXISTING_VAR}" not in result
+        assert "${MISSING_VAR" not in result
+        assert "${today}" not in result
+        
+    finally:
+        del os.environ['EXISTING_VAR']
+
+
+def test_load_config_with_default_values():
+    """Test loading configuration with default value substitution."""
+    config_data = {
+        "llm": {
+            "api_key": "${OPENAI_API_KEY|default-api-key}",
+            "model": "gpt-4",
+            "max_tokens": 4000
+        },
+        "database": {
+            "url": "${DATABASE_URL|sqlite:///default.db}"
+        },
+        "bot": {
+            "name": "Test Bot",
+            "url": "${BOT_URL|https://default.example.com}",
+            "system_prompts": [
+                "You are a helpful assistant.",
+                "Environment: ${ENVIRONMENT|development}"
+            ]
+        }
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config_data, f)
+        config_path = f.name
+    
+    try:
+        # Mock the environment variable lookup to ensure it returns None
+        import unittest.mock
+        with unittest.mock.patch('os.getenv', return_value=None):
+            config = load_config(config_path)
+            
+            # Should use default values since no environment variables are set
+            assert config.llm.api_key == 'default-api-key'
+            assert config.database.url == 'sqlite:///default.db'
+            assert config.bot.name == 'Test Bot'
+            assert config.bot.url == 'https://default.example.com'
+            assert len(config.bot.system_prompts) == 2
+            assert config.bot.system_prompts[0] == 'You are a helpful assistant.'
+            assert config.bot.system_prompts[1] == 'Environment: development'
+        
+    finally:
+        Path(config_path).unlink()
+
+
+def test_load_config_with_default_values_and_environment():
+    """Test loading configuration with default values when environment variables exist."""
+    config_data = {
+        "llm": {
+            "api_key": "${OPENAI_API_KEY|default-api-key}",
+            "model": "gpt-4"
+        },
+        "database": {
+            "url": "${DATABASE_URL|sqlite:///default.db}"
+        }
+    }
+    
+    # Set environment variables
+    os.environ['OPENAI_API_KEY'] = 'env-api-key'
+    os.environ['DATABASE_URL'] = 'sqlite:///env.db'
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config_data, f)
+        config_path = f.name
+    
+    try:
+        config = load_config(config_path)
+        
+        # Should use environment values, not defaults
+        assert config.llm.api_key == 'env-api-key'
+        assert config.database.url == 'sqlite:///env.db'
+        
+    finally:
+        Path(config_path).unlink()
+        # Clean up environment variables
+        del os.environ['OPENAI_API_KEY']
+        del os.environ['DATABASE_URL']
+
+
+def test_load_config_with_default_values_complex():
+    """Test complex default value scenarios in configuration."""
+    config_data = {
+        "llm": {
+            "api_key": "${OPENAI_API_KEY|default-key}",
+            "model": "gpt-4",
+            "max_tokens": 4000,
+            "temperature": 0.7
+        },
+        "database": {
+            "url": "${DATABASE_URL|sqlite:///default.db}",
+            "echo": False
+        },
+        "bot": {
+            "name": "LIMP",
+            "url": "${BOT_URL|https://default.example.com}",
+            "system_prompts": [
+                "You are a helpful AI assistant.",
+                "Today is ${today|2023-01-01}",
+                "Environment: ${ENVIRONMENT|production}"
+            ]
+        },
+        "external_systems": [
+            {
+                "name": "primary-system",
+                "primary": True,
+                "oauth2": {
+                    "client_id": "${CLIENT_ID|default-client-id}",
+                    "client_secret": "${CLIENT_SECRET|default-client-secret}",
+                    "authorization_url": "https://example.com/oauth/authorize",
+                    "token_url": "https://example.com/oauth/token"
+                },
+                "openapi_spec": "https://example.com/api/openapi.json",
+                "base_url": "https://example.com/api"
+            }
+        ],
+        "im_platforms": [
+            {
+                "platform": "slack",
+                "app_id": "${SLACK_APP_ID|default-slack-app-id}",
+                "client_id": "${SLACK_CLIENT_ID|default-slack-client-id}",
+                "client_secret": "${SLACK_CLIENT_SECRET|default-slack-client-secret}",
+                "signing_secret": "${SLACK_SIGNING_SECRET|default-slack-signing-secret}"
+            }
+        ],
+        "admin": {
+            "enabled": True,
+            "username": "${ADMIN_USERNAME|default-admin}",
+            "password": "${ADMIN_PASSWORD|default-password}"
+        }
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config_data, f)
+        config_path = f.name
+    
+    try:
+        config = load_config(config_path)
+        
+        # Test LLM configuration with defaults
+        assert config.llm.api_key == 'default-key'
+        assert config.llm.model == 'gpt-4'
+        
+        # Test database configuration with defaults
+        assert config.database.url == 'sqlite:///default.db'
+        
+        # Test bot configuration with defaults
+        assert config.bot.name == 'LIMP'
+        assert config.bot.url == 'https://default.example.com'
+        assert len(config.bot.system_prompts) == 3
+        assert config.bot.system_prompts[0] == 'You are a helpful AI assistant.'
+        assert 'Today is' in config.bot.system_prompts[1]  # Should use built-in today, not default
+        assert config.bot.system_prompts[2] == 'Environment: production'
+        
+        # Test external systems with defaults
+        assert len(config.external_systems) == 1
+        assert config.external_systems[0].name == 'primary-system'
+        assert config.external_systems[0].primary is True
+        assert config.external_systems[0].oauth2.client_id == 'default-client-id'
+        assert config.external_systems[0].oauth2.client_secret == 'default-client-secret'
+        
+        # Test IM platforms with defaults
+        assert len(config.im_platforms) == 1
+        assert config.im_platforms[0].platform == 'slack'
+        assert config.im_platforms[0].app_id == 'default-slack-app-id'
+        
+        # Test admin configuration with defaults
+        assert config.admin.enabled is True
+        assert config.admin.username == 'default-admin'
+        assert config.admin.password == 'default-password'
+        
+    finally:
+        Path(config_path).unlink()
+
+
+def test_substitute_variables_default_value_backward_compatibility():
+    """Test that default value syntax doesn't break existing functionality."""
+    # Test that existing syntax still works
+    result = substitute_variables("Value: ${MISSING_VAR}")
+    assert result == "Value: "
+    
+    # Test that existing syntax with environment variables still works
+    os.environ['EXISTING_VAR'] = 'env_value'
+    try:
+        result = substitute_variables("Value: ${EXISTING_VAR}")
+        assert result == "Value: env_value"
+    finally:
+        del os.environ['EXISTING_VAR']
+    
+    # Test that built-in variables still work
+    result = substitute_variables("Date: ${today}")
+    assert "Date:" in result
+    assert result != "Date: ${today}"
+
+
+def test_substitute_variables_default_value_performance():
+    """Test performance with many default value variables."""
+    # Create a string with many variables with defaults
+    many_vars = " ".join([f"${{VAR_{i}|default_{i}}}" for i in range(100)])
+    
+    # This should not raise an exception and should complete quickly
+    result = substitute_variables(many_vars)
+    assert isinstance(result, str)
+    # All variables should be substituted to their default values
+    assert "${" not in result
+    # Check that defaults are present
+    assert "default_0" in result
+    assert "default_99" in result
+
+
+def test_substitute_variables_empty_string_handling():
+    """Test that empty string substitutions are handled properly for Pydantic validation."""
+    # Test that empty string substitution returns None
+    result = substitute_variables("${MISSING_VAR}")
+    assert result is None
+    
+    # Test that empty string with default returns the default
+    result = substitute_variables("${MISSING_VAR|default}")
+    assert result == "default"
+    
+    # Test that empty string with empty default returns None
+    result = substitute_variables("${MISSING_VAR|}")
+    assert result is None
+
+
+def test_load_config_with_empty_variables():
+    """Test loading configuration with empty variables that should be omitted."""
+    config_data = {
+        "llm": {
+            "api_key": "test-key",
+            "model": "gpt-4",
+            "max_tokens": 4000,
+            "temperature": 0.7,
+            "context_window_size": "${MISSING_CONTEXT_WINDOW_SIZE}"  # This should be omitted
+        },
+        "database": {
+            "url": "sqlite:///test.db"
+        }
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config_data, f)
+        config_path = f.name
+    
+    try:
+        config = load_config(config_path)
+        
+        # The context_window_size should be omitted, allowing Pydantic to use its default
+        assert config.llm.api_key == "test-key"
+        assert config.llm.model == "gpt-4"
+        assert config.llm.max_tokens == 4000
+        assert config.llm.temperature == 0.7
+        # context_window_size should be None (Pydantic default)
+        assert config.llm.context_window_size is None
+        
+    finally:
+        Path(config_path).unlink()
+
+
+def test_load_config_with_empty_variables_and_defaults():
+    """Test loading configuration with empty variables that have default values."""
+    config_data = {
+        "llm": {
+            "api_key": "test-key",
+            "model": "gpt-4",
+            "max_tokens": 4000,
+            "temperature": 0.7,
+            "context_window_size": "${MISSING_CONTEXT_WINDOW_SIZE|8192}"  # Should use default
+        },
+        "database": {
+            "url": "sqlite:///test.db"
+        }
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config_data, f)
+        config_path = f.name
+    
+    try:
+        config = load_config(config_path)
+        
+        # The context_window_size should use the default value
+        assert config.llm.api_key == "test-key"
+        assert config.llm.model == "gpt-4"
+        assert config.llm.max_tokens == 4000
+        assert config.llm.temperature == 0.7
+        assert config.llm.context_window_size == 8192
+        
+    finally:
+        Path(config_path).unlink()
+
+
+def test_load_config_with_mixed_empty_and_valid_variables():
+    """Test loading configuration with mix of empty and valid variables."""
+    config_data = {
+        "llm": {
+            "api_key": "test-key",  # Required field with actual value
+            "model": "gpt-4",
+            "max_tokens": "${OPENAI_MAX_TOKENS|4000}",  # Should use default
+            "temperature": 0.7,
+            "context_window_size": "${MISSING_CONTEXT_WINDOW_SIZE}"  # Should be omitted
+        },
+        "database": {
+            "url": "sqlite:///test.db"
+        }
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config_data, f)
+        config_path = f.name
+    
+    try:
+        config = load_config(config_path)
+        
+        # api_key should be present
+        assert config.llm.api_key == "test-key"
+        assert config.llm.model == "gpt-4"
+        assert config.llm.max_tokens == 4000
+        assert config.llm.temperature == 0.7
+        # context_window_size should be omitted, allowing Pydantic to use its default
+        assert config.llm.context_window_size is None
+        
+    finally:
+        Path(config_path).unlink()

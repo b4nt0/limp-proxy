@@ -1,0 +1,69 @@
+# LIMP Configuration File
+
+bot:
+  name: "LIMP"
+  url: ""
+  debug: false
+  system_prompts:
+    - "You are a helpful AI assistant that can help users interact with external systems."
+    - Today's date (YYYY-MM-DD) is ${today}.
+    - "Always be polite and professional in your responses."
+    - "If you need to access external systems, ask the user to authorize access first."
+
+database:
+  url: "sqlite:///./limp.db"
+  echo: false
+
+llm:
+  provider: "openai"
+  api_key: "your-openai-api-key-here"
+  model: "gpt-4"
+  max_tokens: 4000
+  temperature: 0.7
+  max_iterations: 8
+  # Context management settings
+  context_threshold: 0.75  # Trigger summarization when context is 75% full
+  context_window_size: null  # Auto-detect from OpenAI API
+  summary_max_tokens: 2048  # Maximum tokens for conversation summaries
+
+external_systems:
+  - name: "example-system"
+    primary: true
+    oauth2:
+      client_id: "your-client-id"
+      client_secret: "your-client-secret"
+      authorization_url: "https://example.com/oauth/authorize"
+      token_url: "https://example.com/oauth/token"
+      scope: "read write"
+      test_endpoint: "https://example.com/oauth/introspect"  # Optional: for token validation
+    openapi_spec: "https://example.com/api/openapi.json"
+    base_url: "https://example.com/api"
+
+im_platforms:
+  - platform: "slack"
+    app_id: "your-slack-app-id"
+    client_id: "your-slack-client-id"
+    client_secret: "your-slack-client-secret"
+    signing_secret: "your-slack-signing-secret"
+  
+  - platform: "teams"
+    app_id: "your-teams-app-id"
+    client_id: "your-teams-client-id"
+    client_secret: "your-teams-client-secret"
+    conversation_timeout_hours: 8
+
+admin:
+  enabled: true
+  username: "admin"
+  password: "admin123"
+
+alerts:
+  enabled: false
+  webhook_url: "https://your-webhook-url.com/alerts"
+
+prompts_dir: "./prompts"
+context_files_dir: "./context"
+
+logging:
+  level: "INFO"
+
