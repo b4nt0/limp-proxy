@@ -34,6 +34,14 @@ def create_engine(config: DatabaseConfig):
     
     logger.debug(f"Creating database engine with URL: {database_url}")
     
+    # Debug: Check password length before URL parsing
+    import urllib.parse
+    parsed_url_debug = urllib.parse.urlparse(database_url)
+    logger.debug(f"DEBUG - Password length before engine creation: {len(parsed_url_debug.password) if parsed_url_debug.password else 0}")
+    if parsed_url_debug.password:
+        logger.debug(f"DEBUG - Password (first 10): {parsed_url_debug.password[:10]}")
+        logger.debug(f"DEBUG - Password (last 10): {parsed_url_debug.password[-10:]}")
+    
     if database_url.startswith("sqlite"):
         _engine = sa_create_engine(
             database_url,
@@ -105,6 +113,15 @@ def test_database_connection(database_url):
         logger.info(f"  User: {user}")
         logger.info(f"  Password length: {len(password) if password else 0}")
         
+        # Log password hash for comparison (first 8 chars)
+        if password:
+            import hashlib
+            password_hash = hashlib.sha256(password.encode()).hexdigest()[:8]
+            logger.info(f"  Password hash: {password_hash}")
+            logger.info(f"  Password (first 10 chars): {password[:10]}")
+            logger.info(f"  Password (last 10 chars): {password[-10:]}")
+            logger.info(f"  Password bytes: {password.encode()}")
+        
         # Try direct psycopg2 connection
         conn = psycopg2.connect(
             host=host,
@@ -139,6 +156,7 @@ def init_database(engine):
     
     # Test direct connection first
     if not engine.url.database == ':memory:':
+        logger.info("=== Testing Direct Connection Before Alembic ===")
         test_database_connection(str(engine.url))
     
     for attempt in range(1, max_attempts + 1):

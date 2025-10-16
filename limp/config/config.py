@@ -309,6 +309,9 @@ def load_config(config_path: str, env_config: Optional['EnvironmentConfig'] = No
             if parsed_url.password:
                 masked_url = final_url.replace(parsed_url.password, "***")
                 logger.info(f"Final database URL after substitution: {masked_url}")
+                logger.debug(f"DEBUG - Password length after substitution: {len(parsed_url.password)}")
+                logger.debug(f"DEBUG - Password (first 10): {parsed_url.password[:10]}")
+                logger.debug(f"DEBUG - Password (last 10): {parsed_url.password[-10:]}")
             else:
                 logger.info(f"Final database URL after substitution: {final_url}")
     
