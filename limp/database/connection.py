@@ -5,7 +5,7 @@ Database connection and session management.
 from sqlalchemy import create_engine as sa_create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
-from typing import Generator
+from typing import Any, Generator, Tuple
 import logging
 
 from ..config import DatabaseConfig
@@ -22,7 +22,7 @@ def get_database_url(config: DatabaseConfig) -> str:
     return config.url
 
 
-def create_engine(config: DatabaseConfig):
+def create_engine(config: DatabaseConfig) -> Tuple[Any, str]:
     """Create SQLAlchemy engine."""
     global _engine
     import os
@@ -80,60 +80,6 @@ def get_session() -> Generator[Session, None, None]:
         session.close()
 
 
-def test_database_connection(database_url):
-    """Test database connection with detailed debugging."""
-    import psycopg2
-    import urllib.parse
-    
-    logger.info("Testing direct psycopg2 connection...")
-    
-    try:
-        # Parse the URL
-        parsed_url = urllib.parse.urlparse(database_url)
-        
-        # Extract connection parameters
-        host = parsed_url.hostname
-        port = parsed_url.port or 5432
-        database = parsed_url.path[1:] if parsed_url.path else 'postgres'
-        user = parsed_url.username
-        password = parsed_url.password
-        
-        logger.info(f"Direct connection attempt:")
-        logger.info(f"  Host: {host}")
-        logger.info(f"  Port: {port}")
-        logger.info(f"  Database: {database}")
-        logger.info(f"  User: {user}")
-        logger.info(f"  Password length: {len(password) if password else 0}")
-        
-        # Log password hash for comparison (first 8 chars)
-        if password:
-            import hashlib
-            password_hash = hashlib.sha256(password.encode()).hexdigest()[:8]
-            logger.info(f"  Password hash: {password_hash}")
-            logger.info(f"  Password (first 10 chars): {password[:10]}")
-            logger.info(f"  Password (last 10 chars): {password[-10:]}")
-            logger.info(f"  Password bytes: {password.encode()}")
-        
-        # Try direct psycopg2 connection
-        conn = psycopg2.connect(
-            host=host,
-            port=port,
-            database=database,
-            user=user,
-            password=password,
-            connect_timeout=10,
-            application_name="limp-test"
-        )
-        
-        logger.info("Direct psycopg2 connection successful!")
-        conn.close()
-        return True
-        
-    except Exception as e:
-        logger.error(f"Direct psycopg2 connection failed: {e}")
-        return False
-
-
 def init_database(engine, original_database_url=None):
     """Initialize database tables using Alembic migrations."""
     import time
@@ -145,13 +91,6 @@ def init_database(engine, original_database_url=None):
     connection_timeout = int(os.getenv("DATABASE_CONNECTION_TIMEOUT", "30"))  # seconds
     
     logger.info(f"Database initialization: max_attempts={max_attempts}, retry_delay={retry_delay}s, timeout={connection_timeout}s")
-    
-    # Test direct connection first
-    if not engine.url.database == ':memory:':
-        logger.info("=== Testing Direct Connection Before Alembic ===")
-        # Use original URL instead of engine.url (which is sanitized by SQLAlchemy)
-        test_url = original_database_url or str(engine.url)
-        test_database_connection(test_url)
     
     for attempt in range(1, max_attempts + 1):
         try:
