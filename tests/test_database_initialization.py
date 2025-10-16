@@ -147,10 +147,10 @@ class TestDatabaseInitialization:
             )
             
             # Create engine using the application's create_engine function
-            engine = limp_create_engine(config.database)
+            engine, database_url = limp_create_engine(config.database)
             
             # Initialize database
-            init_database(engine)
+            init_database(engine, original_database_url=database_url)
             
             # Verify the database was initialized correctly
             with engine.connect() as conn:
