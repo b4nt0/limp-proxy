@@ -32,13 +32,7 @@ def create_engine(config: DatabaseConfig):
     # Get connection timeout from environment
     connection_timeout = int(os.getenv("DATABASE_CONNECTION_TIMEOUT", "30"))
     
-    import urllib.parse
-    parsed_url = urllib.parse.urlparse(database_url)
-    if parsed_url.password:
-        masked_url = database_url.replace(parsed_url.password, "***")
-        logger.info(f"Creating database engine with URL: {masked_url}")
-    else:
-        logger.info(f"Creating database engine with URL: {database_url}")
+    logger.debug(f"Creating database engine with URL: {database_url}")
     
     if database_url.startswith("sqlite"):
         _engine = sa_create_engine(
@@ -52,7 +46,9 @@ def create_engine(config: DatabaseConfig):
         if database_url.startswith("postgresql"):
             connect_args.update({
                 "connect_timeout": connection_timeout,
-                "application_name": "limp"
+                "application_name": "limp",
+                "sslmode": "prefer",  # Try SSL first, fallback to non-SSL
+                "gssencmode": "disable",  # Disable GSSAPI encryption
             })
         
         # Add pool timeout to prevent hanging
@@ -84,6 +80,51 @@ def get_session() -> Generator[Session, None, None]:
         session.close()
 
 
+def test_database_connection(database_url):
+    """Test database connection with detailed debugging."""
+    import psycopg2
+    import urllib.parse
+    
+    logger.info("Testing direct psycopg2 connection...")
+    
+    try:
+        # Parse the URL
+        parsed_url = urllib.parse.urlparse(database_url)
+        
+        # Extract connection parameters
+        host = parsed_url.hostname
+        port = parsed_url.port or 5432
+        database = parsed_url.path[1:] if parsed_url.path else 'postgres'
+        user = parsed_url.username
+        password = parsed_url.password
+        
+        logger.info(f"Direct connection attempt:")
+        logger.info(f"  Host: {host}")
+        logger.info(f"  Port: {port}")
+        logger.info(f"  Database: {database}")
+        logger.info(f"  User: {user}")
+        logger.info(f"  Password length: {len(password) if password else 0}")
+        
+        # Try direct psycopg2 connection
+        conn = psycopg2.connect(
+            host=host,
+            port=port,
+            database=database,
+            user=user,
+            password=password,
+            connect_timeout=10,
+            application_name="limp-test"
+        )
+        
+        logger.info("Direct psycopg2 connection successful!")
+        conn.close()
+        return True
+        
+    except Exception as e:
+        logger.error(f"Direct psycopg2 connection failed: {e}")
+        return False
+
+
 def init_database(engine):
     """Initialize database tables using Alembic migrations."""
     import time
@@ -95,6 +136,10 @@ def init_database(engine):
     connection_timeout = int(os.getenv("DATABASE_CONNECTION_TIMEOUT", "30"))  # seconds
     
     logger.info(f"Database initialization: max_attempts={max_attempts}, retry_delay={retry_delay}s, timeout={connection_timeout}s")
+    
+    # Test direct connection first
+    if not engine.url.database == ':memory:':
+        test_database_connection(str(engine.url))
     
     for attempt in range(1, max_attempts + 1):
         try:
@@ -134,8 +179,10 @@ def init_database(engine):
             logger.error(f"Engine URL was: {engine.url}")
             
             if attempt < max_attempts:
-                logger.info(f"Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
+                # Progressive backoff
+                delay = (attempt ** 2) * retry_delay
+                logger.info(f"Retrying in {delay} seconds (progressive backoff: attempt {attempt}, delaying for {delay}s)...")
+                time.sleep(delay)
             else:
                 logger.error(f"Database initialization failed after {max_attempts} attempts")
                 logger.error("Container will exit to prevent infinite restart loops")
