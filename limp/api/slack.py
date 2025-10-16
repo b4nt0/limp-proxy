@@ -467,10 +467,11 @@ async def handle_slack_interactivity(
             logger.error(f"Invalid JSON in Slack interactivity payload: {e}")
             raise HTTPException(status_code=400, detail="Invalid payload format")
         
-        # Check if this is an authorization button click
+        # Check if this is a block actions event
         if payload.get("type") == "block_actions":
             actions = payload.get("actions", [])
             for action in actions:
+                # Check if this is an authorization button click
                 if action.get("action_id") == "authorization_button":
                     auth_url = action.get("value")
                     if auth_url:
@@ -500,6 +501,11 @@ async def handle_slack_interactivity(
                     else:
                         logger.error("No auth URL in authorization button")
                         raise HTTPException(status_code=400, detail="No authorization URL found")
+                else:
+                    # Handle other button clicks (non-authorization buttons)
+                    logger.info(f"Button clicked with action_id: {action.get('action_id')}")
+                    # For now, just acknowledge the interaction
+                    return {"status": "ok", "message": "Button interaction received"}
         
         # If not an authorization button, return a simple response
         logger.info("Non-authorization interactivity received")

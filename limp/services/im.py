@@ -260,21 +260,15 @@ class SlackService(IMService):
                     "text": {
                         "type": "mrkdwn",
                         "text": f"{button_description}\n\n🔒 Click the button below to authorize:"
+                    },
+                    "accessory": {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": f"🔐 {button_text}"
+                        },
+                        "url": auth_url
                     }
-                },
-                {
-                    "type": "actions",
-                    "elements": [
-                        {
-                            "type": "button",
-                            "text": {
-                                "type": "plain_text",
-                                "text": f"🔐 {button_text}"
-                            },
-                            "url": auth_url,
-                            "style": "primary"
-                        }
-                    ]
                 }
             ]
     

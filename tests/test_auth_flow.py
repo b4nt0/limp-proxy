@@ -538,7 +538,7 @@ class TestIMServiceAuthorizationButtons:
         result = slack_service.create_authorization_button(auth_url, button_text, button_description, None)
         
         assert isinstance(result, list)
-        assert len(result) == 2  # Section + Actions
+        assert len(result) == 1  # Single section block with accessory
         
         # Check section block
         section_block = result[0]
@@ -547,16 +547,12 @@ class TestIMServiceAuthorizationButtons:
         expected_text = f"{button_description}\n\n🔒 Click the button below to authorize:"
         assert section_block["text"]["text"] == expected_text
         
-        # Check actions block
-        actions_block = result[1]
-        assert actions_block["type"] == "actions"
-        assert len(actions_block["elements"]) == 1
-        
-        button = actions_block["elements"][0]
+        # Check accessory button
+        assert "accessory" in section_block
+        button = section_block["accessory"]
         assert button["type"] == "button"
         assert button["text"]["text"] == f"🔐 {button_text}"
         assert button["url"] == auth_url  # URL field for direct browser opening
-        assert button["style"] == "primary"
     
     def test_slack_create_authorization_button_with_localhost_url(self):
         """Test Slack authorization button creation with localhost URL (should use hyperlink)."""
