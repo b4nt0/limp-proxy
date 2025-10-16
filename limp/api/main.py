@@ -49,8 +49,8 @@ def create_app(app_config: Config) -> FastAPI:
     )
     
     # Initialize database
-    engine = create_engine(config.database)
-    init_database(engine)
+    engine, database_url = create_engine(config.database)
+    init_database(engine, database_url)
     
     # Include routers
     app.include_router(slack_router, prefix="/api/slack", tags=["slack"])

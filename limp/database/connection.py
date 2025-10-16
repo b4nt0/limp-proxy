@@ -72,7 +72,7 @@ def create_engine(config: DatabaseConfig):
             pool_pre_ping=True  # Verify connections before use
         )
     
-    return _engine
+    return _engine, database_url
 
 
 def get_session() -> Generator[Session, None, None]:
@@ -142,7 +142,7 @@ def test_database_connection(database_url):
         return False
 
 
-def init_database(engine):
+def init_database(engine, original_database_url=None):
     """Initialize database tables using Alembic migrations."""
     import time
     import os
@@ -157,7 +157,9 @@ def init_database(engine):
     # Test direct connection first
     if not engine.url.database == ':memory:':
         logger.info("=== Testing Direct Connection Before Alembic ===")
-        test_database_connection(str(engine.url))
+        # Use original URL instead of engine.url (which is sanitized by SQLAlchemy)
+        test_url = original_database_url or str(engine.url)
+        test_database_connection(test_url)
     
     for attempt in range(1, max_attempts + 1):
         try:
