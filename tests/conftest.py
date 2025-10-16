@@ -3,6 +3,7 @@ Pytest configuration and fixtures.
 """
 
 import pytest
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
@@ -12,6 +13,12 @@ from limp.models.base import Base
 from limp.models.slack_organization import SlackOrganization  # Import to ensure table is created
 from limp.config import Config, DatabaseConfig, LLMConfig
 from limp.api.main import create_app
+
+# Set fast test timeouts for all tests
+os.environ.setdefault("DATABASE_INIT_MAX_ATTEMPTS", "1")
+os.environ.setdefault("DATABASE_INIT_RETRY_DELAY", "1")
+os.environ.setdefault("DATABASE_CONNECTION_TIMEOUT", "5")
+os.environ.setdefault("DATABASE_POOL_TIMEOUT", "5")
 
 
 @pytest.fixture

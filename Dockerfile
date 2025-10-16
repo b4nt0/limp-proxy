@@ -34,7 +34,12 @@ FROM python:3.13-slim AS runtime
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/opt/venv/bin:$PATH"
+    PATH="/opt/venv/bin:$PATH" \
+    DATABASE_INIT_MAX_ATTEMPTS=5 \
+    DATABASE_INIT_RETRY_DELAY=10 \
+    DATABASE_CONNECTION_TIMEOUT=30 \
+    DATABASE_POOL_TIMEOUT=30 \
+    DATABASE_POOL_RECYCLE=3600
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \

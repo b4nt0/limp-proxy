@@ -25,9 +25,21 @@ def get_database_url(config: DatabaseConfig) -> str:
 def create_engine(config: DatabaseConfig):
     """Create SQLAlchemy engine."""
     global _engine
+    import os
+    
     database_url = get_database_url(config)
     
-    # Special handling for SQLite
+    # Get connection timeout from environment
+    connection_timeout = int(os.getenv("DATABASE_CONNECTION_TIMEOUT", "30"))
+    
+    import urllib.parse
+    parsed_url = urllib.parse.urlparse(database_url)
+    if parsed_url.password:
+        masked_url = database_url.replace(parsed_url.password, "***")
+        logger.info(f"Creating database engine with URL: {masked_url}")
+    else:
+        logger.info(f"Creating database engine with URL: {database_url}")
+    
     if database_url.startswith("sqlite"):
         _engine = sa_create_engine(
             database_url,
@@ -36,9 +48,24 @@ def create_engine(config: DatabaseConfig):
             connect_args={"check_same_thread": False}
         )
     else:
+        connect_args = {}
+        if database_url.startswith("postgresql"):
+            connect_args.update({
+                "connect_timeout": connection_timeout,
+                "application_name": "limp"
+            })
+        
+        # Add pool timeout to prevent hanging
+        pool_timeout = int(os.getenv("DATABASE_POOL_TIMEOUT", "30"))
+        pool_recycle = int(os.getenv("DATABASE_POOL_RECYCLE", "3600"))  # 1 hour
+        
         _engine = sa_create_engine(
             database_url,
-            echo=config.echo
+            echo=config.echo,
+            connect_args=connect_args,
+            pool_timeout=pool_timeout,
+            pool_recycle=pool_recycle,
+            pool_pre_ping=True  # Verify connections before use
         )
     
     return _engine
@@ -59,20 +86,60 @@ def get_session() -> Generator[Session, None, None]:
 
 def init_database(engine):
     """Initialize database tables using Alembic migrations."""
-    try:
-        # Use Alembic migrations instead of create_all
-        from alembic.config import Config as AlembicConfig
-        from alembic import command
+    import time
+    import os
+    
+    # Configuration for retry logic
+    max_attempts = int(os.getenv("DATABASE_INIT_MAX_ATTEMPTS", "5"))
+    retry_delay = int(os.getenv("DATABASE_INIT_RETRY_DELAY", "10"))  # seconds
+    connection_timeout = int(os.getenv("DATABASE_CONNECTION_TIMEOUT", "30"))  # seconds
+    
+    logger.info(f"Database initialization: max_attempts={max_attempts}, retry_delay={retry_delay}s, timeout={connection_timeout}s")
+    
+    for attempt in range(1, max_attempts + 1):
+        try:
+            logger.info(f"Database initialization attempt {attempt}/{max_attempts}")
+            
+            # Use Alembic migrations instead of create_all
+            from alembic.config import Config as AlembicConfig
+            from alembic import command
 
-        if engine.url.database == ':memory:':
-            Base.metadata.create_all(bind=engine)
-            logger.info("Created in-memory database tables successfully")
-        else:        
-            alembic_cfg = AlembicConfig("alembic.ini")
-            # Set the database URL from the engine to override the hardcoded one in alembic.ini
-            alembic_cfg.set_main_option("sqlalchemy.url", str(engine.url))
-            command.upgrade(alembic_cfg, "head")
-            logger.info("Database migrations applied successfully")
-    except Exception as e:
-        logger.error(f"Failed to apply database migrations: {e}")
-        raise
+            if engine.url.database == ':memory:':
+                Base.metadata.create_all(bind=engine)
+                logger.info("Created in-memory database tables successfully")
+                return  # Success, exit the retry loop
+            else:        
+                logger.info(f"Initializing database with URL: {engine.url}")
+                alembic_cfg = AlembicConfig("alembic.ini")
+                
+                # CRITICAL: Override the database URL in Alembic configuration
+                # This ensures Alembic uses the same database as our application
+                database_url = str(engine.url)
+                alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+                
+                # Also set it in the alembic section to be absolutely sure
+                alembic_cfg.set_section_option("alembic", "sqlalchemy.url", database_url)
+                
+                # Verify the URL was set correctly
+                final_url = alembic_cfg.get_main_option("sqlalchemy.url")
+                logger.info(f"Alembic will use URL: {final_url}")
+                
+                # Run migrations with the correct URL
+                command.upgrade(alembic_cfg, "head")
+                logger.info("Database migrations applied successfully")
+                return  # Success, exit the retry loop
+                
+        except Exception as e:
+            logger.error(f"Database initialization attempt {attempt}/{max_attempts} failed: {e}")
+            logger.error(f"Engine URL was: {engine.url}")
+            
+            if attempt < max_attempts:
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                logger.error(f"Database initialization failed after {max_attempts} attempts")
+                logger.error("Container will exit to prevent infinite restart loops")
+                raise RuntimeError(f"Database initialization failed after {max_attempts} attempts. Last error: {e}")
+    
+    # This should never be reached due to the raise above, but just in case
+    raise RuntimeError("Database initialization failed - unexpected end of retry loop")

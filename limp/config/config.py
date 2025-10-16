@@ -268,6 +268,9 @@ def _substitute_config_values(config_data: Dict[str, Any], env_config: Optional[
 
 def load_config(config_path: str, env_config: Optional['EnvironmentConfig'] = None) -> Config:
     """Load configuration from YAML file with variable substitution."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     config_file = Path(config_path)
     
     if not config_file.exists():
@@ -280,8 +283,34 @@ def load_config(config_path: str, env_config: Optional['EnvironmentConfig'] = No
     if env_config is None:
         env_config = get_env_config()
     
+    # Log environment variable for debugging
+    database_url_env = os.getenv("DATABASE_URL")
+    if database_url_env:
+        # Mask password in logs
+        import urllib.parse
+        parsed_url = urllib.parse.urlparse(database_url_env)
+        if parsed_url.password:
+            masked_url = database_url_env.replace(parsed_url.password, "***")
+            logger.info(f"DATABASE_URL environment variable: {masked_url}")
+        else:
+            logger.info(f"DATABASE_URL environment variable: {database_url_env}")
+    else:
+        logger.warning("DATABASE_URL environment variable not set")
+    
     # Substitute variables in the configuration data
     config_data = _substitute_config_values(config_data, env_config)
+    
+    # Log the final database URL after substitution
+    if 'database' in config_data and 'url' in config_data['database']:
+        final_url = config_data['database']['url']
+        if final_url and not final_url.startswith("sqlite"):
+            import urllib.parse
+            parsed_url = urllib.parse.urlparse(final_url)
+            if parsed_url.password:
+                masked_url = final_url.replace(parsed_url.password, "***")
+                logger.info(f"Final database URL after substitution: {masked_url}")
+            else:
+                logger.info(f"Final database URL after substitution: {final_url}")
     
     config = Config(**config_data)
     
