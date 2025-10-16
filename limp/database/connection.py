@@ -34,14 +34,6 @@ def create_engine(config: DatabaseConfig):
     
     logger.debug(f"Creating database engine with URL: {database_url}")
     
-    # Debug: Check password length before URL parsing
-    import urllib.parse
-    parsed_url_debug = urllib.parse.urlparse(database_url)
-    logger.debug(f"DEBUG - Password length before engine creation: {len(parsed_url_debug.password) if parsed_url_debug.password else 0}")
-    if parsed_url_debug.password:
-        logger.debug(f"DEBUG - Password (first 10): {parsed_url_debug.password[:10]}")
-        logger.debug(f"DEBUG - Password (last 10): {parsed_url_debug.password[-10:]}")
-    
     if database_url.startswith("sqlite"):
         _engine = sa_create_engine(
             database_url,
@@ -177,17 +169,17 @@ def init_database(engine, original_database_url=None):
                 logger.info(f"Initializing database with URL: {engine.url}")
                 alembic_cfg = AlembicConfig("alembic.ini")
                 
-                # CRITICAL: Override the database URL in Alembic configuration
-                # This ensures Alembic uses the same database as our application
-                database_url = str(engine.url)
-                alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+                # CRITICAL: Use the original database URL, not the sanitized engine.url
+                # This ensures Alembic uses the real password, not the sanitized one
+                alembic_database_url = original_database_url or str(engine.url)
+                alembic_cfg.set_main_option("sqlalchemy.url", alembic_database_url)
                 
-                # Also set it in the alembic section to be absolutely sure
-                alembic_cfg.set_section_option("alembic", "sqlalchemy.url", database_url)
+                # Also set it in the alembic section
+                alembic_cfg.set_section_option("alembic", "sqlalchemy.url", alembic_database_url)
                 
                 # Verify the URL was set correctly
                 final_url = alembic_cfg.get_main_option("sqlalchemy.url")
-                logger.info(f"Alembic will use URL: {final_url}")
+                logger.debug(f"Alembic will use URL: {final_url}")
                 
                 # Run migrations with the correct URL
                 command.upgrade(alembic_cfg, "head")
@@ -196,7 +188,7 @@ def init_database(engine, original_database_url=None):
                 
         except Exception as e:
             logger.error(f"Database initialization attempt {attempt}/{max_attempts} failed: {e}")
-            logger.error(f"Engine URL was: {engine.url}")
+            logger.debug(f"Engine URL was: {engine.url}")
             
             if attempt < max_attempts:
                 # Progressive backoff

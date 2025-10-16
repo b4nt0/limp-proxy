@@ -13,13 +13,13 @@ This guide explains how to containerize and deploy the LIMP application using Do
 
 2. **Run a local image:**
   ```sh
-    docker run --rm \
-    --name limp-app  \
-    -p 8000:8000 \
-    -v ./config-docker.yaml:/app/config.yaml:ro \
-    -v ./limp.db:/app/limp.db \
-    -e LIMP_CONFIG=config.yaml \
-    limp:latest
+      docker run --rm \
+      --name limp-app  \
+      -p 8000:8000 \
+      -v ./config-docker.yaml:/app/config.yaml:ro \
+      -v ./limp.db:/app/limp.db \
+      -e LIMP_CONFIG=config.yaml \
+      limp:latest
   ```
 
 ## Configuration
