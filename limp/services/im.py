@@ -229,48 +229,25 @@ class SlackService(IMService):
     
     def create_authorization_button(self, auth_url: str, button_text: str, button_description: str, request=None) -> List[Dict[str, Any]]:
         """Create authorization button blocks for Slack."""
-        # Check if URL is localhost (Slack doesn't like localhost URLs in buttons)
-        is_localhost = "localhost" in auth_url or "127.0.0.1" in auth_url or "host.docker.internal" in auth_url
-        
-        if is_localhost:
-            # Use hyperlink for localhost URLs
-            return [
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f"{button_description}\n\n:arrow_right: <{auth_url}|*{button_text}*>"
-                    }
-                },
-                {
-                    "type": "context",
-                    "elements": [
-                        {
-                            "type": "mrkdwn",
-                            "text": ":computer: Click the link above to open authorization in your browser"
-                        }
-                    ]
+        # Use hyperlinks instead of buttons, since authorization URLs will be unsafe to use with buttons
+        return [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"{button_description}\n\n:arrow_right: <{auth_url}|*{button_text}*>"
                 }
-            ]
-        else:
-            # Use button for non-localhost URLs
-            return [
-                {
-                    "type": "section",
-                    "text": {
+            },
+            {
+                "type": "context",
+                "elements": [
+                    {
                         "type": "mrkdwn",
-                        "text": f"{button_description}\n\n🔒 Click the button below to authorize:"
-                    },
-                    "accessory": {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": f"🔐 {button_text}"
-                        },
-                        "url": auth_url
+                        "text": ":computer: Click the link above to open authorization in your browser"
                     }
-                }
-            ]
+                ]
+            }
+        ]
     
     def get_user_dm_channel(self, user_id: str) -> str:
         """Get the DM channel ID for a specific user in Slack."""

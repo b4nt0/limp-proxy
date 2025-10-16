@@ -523,37 +523,6 @@ class TestOAuth2TokenValidation:
 class TestIMServiceAuthorizationButtons:
     """Test IM service authorization button functionality."""
     
-    def test_slack_create_authorization_button_with_production_url(self):
-        """Test Slack authorization button creation with production URL (should use button)."""
-        slack_service = SlackService(
-            client_id="test_client_id",
-            client_secret="test_client_secret",
-            signing_secret="test_signing_secret"
-        )
-        
-        auth_url = "https://example.com/oauth/authorize"
-        button_text = "Authorize System"
-        button_description = "Click to authorize access"
-        
-        result = slack_service.create_authorization_button(auth_url, button_text, button_description, None)
-        
-        assert isinstance(result, list)
-        assert len(result) == 1  # Single section block with accessory
-        
-        # Check section block
-        section_block = result[0]
-        assert section_block["type"] == "section"
-        assert section_block["text"]["type"] == "mrkdwn"
-        expected_text = f"{button_description}\n\n🔒 Click the button below to authorize:"
-        assert section_block["text"]["text"] == expected_text
-        
-        # Check accessory button
-        assert "accessory" in section_block
-        button = section_block["accessory"]
-        assert button["type"] == "button"
-        assert button["text"]["text"] == f"🔐 {button_text}"
-        assert button["url"] == auth_url  # URL field for direct browser opening
-    
     def test_slack_create_authorization_button_with_localhost_url(self):
         """Test Slack authorization button creation with localhost URL (should use hyperlink)."""
         slack_service = SlackService(

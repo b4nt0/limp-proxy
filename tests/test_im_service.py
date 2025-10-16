@@ -268,30 +268,6 @@ class TestSlackService:
         assert result is False
         mock_post.assert_not_called()
     
-    def test_create_authorization_button_with_production_url(self):
-        """Test creating authorization button with production URL (should use button)."""
-        auth_url = "https://example.com/oauth/authorize"
-        button_text = "Authorize System"
-        button_description = "Click to authorize access"
-        
-        result = self.slack_service.create_authorization_button(auth_url, button_text, button_description, None)
-        
-        assert isinstance(result, list)
-        assert len(result) == 1  # Single section block with accessory
-        
-        # Check section block
-        section_block = result[0]
-        assert section_block["type"] == "section"
-        assert section_block["text"]["type"] == "mrkdwn"
-        expected_text = f"{button_description}\n\n🔒 Click the button below to authorize:"
-        assert section_block["text"]["text"] == expected_text
-        
-        # Check accessory button
-        assert "accessory" in section_block
-        button = section_block["accessory"]
-        assert button["type"] == "button"
-        assert button["text"]["text"] == f"🔐 {button_text}"
-        assert button["url"] == auth_url  # URL field for direct browser opening
     
     def test_create_authorization_button_with_localhost_url(self):
         """Test creating authorization button with localhost URL (should use hyperlink)."""
