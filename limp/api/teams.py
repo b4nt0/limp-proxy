@@ -19,10 +19,11 @@ teams_router = APIRouter()
 
 @teams_router.post("/webhook")
 async def handle_teams_webhook(request: Request, db: Session = Depends(get_session)):
-    """Handle Microsoft Teams webhook requests."""
+    """Handle Microsoft Teams webhook requests using ActivityHandler pattern."""
     try:
         # Get request data
         request_data = await request.json()
+        logger.info(f"Received Teams webhook: {request_data}")
         
         # Create Teams service
         teams_config = get_config().get_im_platform_by_key("teams")
@@ -32,16 +33,19 @@ async def handle_teams_webhook(request: Request, db: Session = Depends(get_sessi
         if not teams_service.verify_request(request_data):
             raise HTTPException(status_code=401, detail="Invalid request signature")
         
-        # Parse message
-        message_data = teams_service.parse_message(request_data)
+        # Get authorization header
+        auth_header = request.headers.get("Authorization", "")
         
-        if message_data["type"] == "message":
-            return await handle_user_message(
-                message_data, teams_service, db, "teams"
-            )
+        # Process activity using ActivityHandler pattern
+        success = await teams_service.process_activity(request_data, auth_header)
         
-        return {"status": "ok"}
+        if success:
+            return {"status": "ok"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to process activity")
         
     except Exception as e:
         logger.error(f"Teams webhook error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+

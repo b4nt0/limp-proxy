@@ -52,6 +52,12 @@ im_platforms:
     client_secret: "${SLACK_CLIENT_SECRET}"
     signing_secret: "${SLACK_SIGNING_SECRET}"
   
+  - platform: "teams"
+    app_id: "${TEAMS_APP_ID}"
+    client_id: "${TEAMS_CLIENT_ID}"
+    client_secret: "${TEAMS_CLIENT_SECRET}"
+    conversation_timeout_hours: 8
+  
 admin:
   enabled: "${ADMIN_ENABLED|false}"
   username: "${ADMIN_USERNAME}"
