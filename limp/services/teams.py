@@ -66,13 +66,13 @@ class TeamsService(IMService):
         # For now, return True as placeholder
         return True
     
-    async def process_activity(self, activity_data: Dict[str, Any], auth_header: str = "") -> bool:
+    async def process_activity(self, activity_data: Dict[str, Any], auth_header: str = "", db=None) -> bool:
         """Process incoming activity using ActivityHandler pattern."""
         try:
             # Deserialize activity from request data
             activity = Activity().deserialize(activity_data)
             
-            # Process activity through the adapter and bot
+            # Process activity through the adapter and bot (original working approach)
             await self._adapter.process_activity(auth_header, activity, self._bot.on_turn)
             
             logger.info(f"Successfully processed activity: {activity.type}")
@@ -163,10 +163,29 @@ class TeamsService(IMService):
             # Use BotFrameworkAdapter to send the message (handles all auth automatically)
             logger.info(f"Using BotFrameworkAdapter to send message via service URL: {service_url}")
             
-            # The BotFrameworkAdapter should handle authentication automatically
-            # Create a connector client through the adapter (await the coroutine)
-            client = await self._adapter.create_connector_client(service_url)
-            await client.conversations.send_to_conversation(channel, activity)
+            # Trust the Teams service URLs (required for proactive messaging)
+            from botframework.connector.auth import MicrosoftAppCredentials
+            MicrosoftAppCredentials.trust_service_url(service_url)
+            
+            # Create a conversation reference for proactive messaging
+            from botbuilder.schema import ConversationReference
+            conversation_reference = ConversationReference(
+                activity_id=activity.id,
+                user=activity.from_property,
+                bot=activity.recipient,
+                conversation=activity.conversation,
+                channel_id=activity.channel_id,
+                service_url=service_url
+            )
+            
+            # Use the adapter to continue the conversation (proactive messaging)
+            async def send_message_callback(turn_context):
+                await turn_context.send_activity(activity)
+            
+            await self._adapter.continue_conversation(
+                conversation_reference,
+                send_message_callback
+            )
             
             logger.info(f"Successfully sent message to Teams conversation {channel}")
             return True
