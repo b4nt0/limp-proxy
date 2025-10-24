@@ -4,7 +4,9 @@ Tests for IM service functionality.
 
 import pytest
 from unittest.mock import Mock, patch
-from limp.services.im import SlackService, TeamsService, IMServiceFactory
+from limp.services.im import IMServiceFactory
+from limp.services.slack import SlackService
+from limp.services.teams import TeamsService
 
 
 class TestSlackService:

@@ -8,7 +8,8 @@ from datetime import datetime, timedelta
 
 from limp.api.im import handle_user_message
 from limp.services.oauth2 import OAuth2Service
-from limp.services.im import SlackService, TeamsService
+from limp.services.slack import SlackService
+from limp.services.teams import TeamsService
 from limp.models.user import User
 from limp.models.auth import AuthToken
 from limp.config import ExternalSystemConfig, OAuth2Config
