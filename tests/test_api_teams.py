@@ -4,7 +4,7 @@ Tests for Teams API endpoints.
 
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, AsyncMock
 
 
 def test_teams_webhook_message(test_client: TestClient):
@@ -85,3 +85,44 @@ async def test_teams_echo_functionality():
     
     # Verify that the adapter's process_activity was called
     teams_service._adapter.process_activity.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_teams_integration_with_shared_pipeline():
+    """Test that Teams integrates with the shared message handling pipeline."""
+    from limp.services.teams import TeamsService, TeamsEchoBot
+    from unittest.mock import Mock, AsyncMock
+    
+    # Create a mock Teams service
+    teams_service = TeamsService("test_app_id", "test_client_id", "test_client_secret")
+    
+    # Mock database session
+    mock_db = Mock()
+    
+    # Create bot with database session
+    bot = TeamsEchoBot(teams_service, mock_db)
+    
+    # Mock the handle_user_message function
+    with patch('limp.api.im.handle_user_message') as mock_handle:
+        mock_handle.return_value = {"status": "ok", "action": "processed"}
+        
+        # Mock turn context
+        mock_turn_context = Mock()
+        mock_turn_context.activity.text = "Hello, bot!"
+        mock_turn_context.activity.as_dict.return_value = {
+            "type": "message",
+            "from": {"id": "U123456"},
+            "conversation": {"id": "C123456"},
+            "text": "Hello, bot!",
+            "timestamp": "2023-10-24T18:59:44.061Z"
+        }
+        mock_turn_context.send_activity = AsyncMock()
+        
+        # Test the bot's message handling
+        await bot.on_message_activity(mock_turn_context)
+        
+        # Verify that handle_user_message was called
+        mock_handle.assert_called_once()
+        
+        # Verify that send_activity was not called (since shared pipeline handled it)
+        mock_turn_context.send_activity.assert_not_called()

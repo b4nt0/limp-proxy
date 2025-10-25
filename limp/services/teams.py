@@ -18,13 +18,83 @@ logger = logging.getLogger(__name__)
 
 
 class TeamsEchoBot(ActivityHandler):
-    """Simple echo bot using ActivityHandler pattern."""
+    """Teams bot that integrates with the shared message handling pipeline."""
+    
+    def __init__(self, teams_service, db_session):
+        self.teams_service = teams_service
+        self.db_session = db_session
+        self.current_turn_context = None
     
     async def on_message_activity(self, turn_context: TurnContext):
-        """Handle incoming messages."""
-        text = turn_context.activity.text or ""
-        logger.info(f"TeamsEchoBot received message: {text}")
-        await turn_context.send_activity(f"Echo: {text}")
+        """Handle incoming messages through the shared pipeline."""
+        try:
+            text = turn_context.activity.text or ""
+            logger.info(f"TeamsEchoBot received message: {text}")
+            
+            # Store the turn context for use in responses
+            self.current_turn_context = turn_context
+            
+            # If no database session, fall back to simple echo
+            if not self.db_session:
+                await turn_context.send_activity(f"Echo: {text}")
+                return
+            
+            # Parse the activity into message data for the shared pipeline
+            message_data = self.teams_service.parse_message(turn_context.activity.as_dict())
+            
+            if message_data.get("type") == "message":
+                # Import here to avoid circular imports
+                from ..api.im import handle_user_message
+                
+                # Process through the shared message handling pipeline
+                result = await handle_user_message(
+                    message_data,
+                    self.teams_service,
+                    self.db_session,
+                    "teams"
+                )
+                
+                logger.info(f"Teams message processing result: {result}")
+                
+                # If the shared pipeline handled the response, we're done
+                # If not, we could fall back to echo or other Teams-specific handling
+                if result.get("status") != "ok":
+                    # Fallback to simple echo if shared pipeline fails
+                    await turn_context.send_activity(f"Echo: {text}")
+            else:
+                # For non-message activities, just echo
+                await turn_context.send_activity(f"Echo: {text}")
+                
+        except Exception as e:
+            logger.error(f"Error in TeamsEchoBot message handling: {e}")
+            # Fallback to simple echo on error
+            await turn_context.send_activity(f"Echo: {turn_context.activity.text or ''}")
+    
+    async def send_response(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """Send a response using the current turn context."""
+        try:
+            if not self.current_turn_context:
+                logger.error("No turn context available for sending response")
+                return False
+            
+            # Create activity with content and metadata
+            activity = Activity(
+                type=ActivityTypes.message,
+                text=content,
+                channel_id="msteams"
+            )
+            
+            if metadata and metadata.get("attachments"):
+                activity.attachments = metadata["attachments"]
+            
+            # Send using turn context (this is the working pattern)
+            await self.current_turn_context.send_activity(activity)
+            logger.info(f"Successfully sent Teams response: {content}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error sending Teams response: {e}")
+            return False
 
 
 class TeamsServiceConfig:
@@ -52,10 +122,12 @@ class TeamsService(IMService):
         # Initialize BotFrameworkAdapter and EchoBot
         self._adapter = self._create_adapter()
         self._adapter.on_turn_error = self.on_error
-        self._bot = TeamsEchoBot()
         
         # Initialize conversation references storage
         self._conversation_references = {}
+        
+        # Bot will be created per request with database session
+        self._current_bot = None
 
     async def on_error(context, error):
         logger.error(f"[on_turn_error] {type(error)}: {error}")
@@ -72,8 +144,13 @@ class TeamsService(IMService):
             # Deserialize activity from request data
             activity = Activity().deserialize(activity_data)
             
-            # Process activity through the adapter and bot (original working approach)
-            await self._adapter.process_activity(auth_header, activity, self._bot.on_turn)
+            bot = TeamsEchoBot(self, db)
+
+            # Store the current bot instance so send_message can access it
+            self._current_bot = bot
+            
+            # Process activity through the adapter and bot
+            await self._adapter.process_activity(auth_header, activity, bot.on_turn)
             
             logger.info(f"Successfully processed activity: {activity.type}")
             return True
@@ -130,65 +207,18 @@ class TeamsService(IMService):
         return response
     
     async def send_message(self, channel: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
-        """Send message to Teams channel using BotFrameworkAdapter.
-
-        channel here is the Teams conversation ID from the incoming activity.
-        """
+        """Send a message to Teams using the current bot's turn context."""
         try:
-            logger.info(f"Attempting to send message to channel {channel}: {content}")
-            logger.info(f"Available conversation references: {list(self._conversation_references.keys())}")
-
-            conversation_ref = self._conversation_references.get(channel)
-            if not conversation_ref:
-                logger.warning(f"No conversation reference found for channel {channel}")
-                logger.warning(f"Available channels: {list(self._conversation_references.keys())}")
+            logger.info(f"Sending Teams message to channel {channel}: {content}")
+            
+            # Check if we have a current bot instance with turn context
+            if hasattr(self, '_current_bot') and self._current_bot and self._current_bot.current_turn_context:
+                # Use the bot's send_response method (uses turn_context.send_activity)
+                return await self._current_bot.send_response(content, metadata)
+            else:
+                logger.warning("No current bot turn context available for sending message")
+                logger.warning("This usually means the message is being sent outside of a message activity context")
                 return False
-
-            service_url = conversation_ref.get("service_url")
-            if not service_url:
-                logger.warning(f"No service URL found for channel {channel}")
-                logger.warning(f"Conversation ref: {conversation_ref}")
-                return False
-
-            # Build activity
-            activity = Activity(
-                type=ActivityTypes.message,
-                text=content,
-                channel_id="msteams",
-                conversation={"id": channel}
-            )
-            if metadata and metadata.get("attachments"):
-                activity.attachments = metadata["attachments"]
-
-            # Use BotFrameworkAdapter to send the message (handles all auth automatically)
-            logger.info(f"Using BotFrameworkAdapter to send message via service URL: {service_url}")
-            
-            # Trust the Teams service URLs (required for proactive messaging)
-            from botframework.connector.auth import MicrosoftAppCredentials
-            MicrosoftAppCredentials.trust_service_url(service_url)
-            
-            # Create a conversation reference for proactive messaging
-            from botbuilder.schema import ConversationReference
-            conversation_reference = ConversationReference(
-                activity_id=activity.id,
-                user=activity.from_property,
-                bot=activity.recipient,
-                conversation=activity.conversation,
-                channel_id=activity.channel_id,
-                service_url=service_url
-            )
-            
-            # Use the adapter to continue the conversation (proactive messaging)
-            async def send_message_callback(turn_context):
-                await turn_context.send_activity(activity)
-            
-            await self._adapter.continue_conversation(
-                conversation_reference,
-                send_message_callback
-            )
-            
-            logger.info(f"Successfully sent message to Teams conversation {channel}")
-            return True
 
         except Exception as e:
             logger.error(f"Error sending Teams message: {e}")

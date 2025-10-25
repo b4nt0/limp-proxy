@@ -3,7 +3,7 @@ Tests for authentication flow implementation.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 from datetime import datetime, timedelta
 
 from limp.api.im import handle_user_message
@@ -307,7 +307,7 @@ class TestAuthenticationFlow:
         # Mock IM service methods
         self.mock_im_service.get_user_dm_channel.return_value = "D123456"
         self.mock_im_service.create_authorization_button.return_value = [{"type": "button"}]
-        self.mock_im_service.send_message.return_value = True
+        self.mock_im_service.send_message = AsyncMock(return_value=True)
         
         # Call the function
         result = await handle_user_message(
@@ -366,7 +366,7 @@ class TestAuthenticationFlow:
         # Mock IM service methods
         self.mock_im_service.get_user_dm_channel.return_value = "D123456"
         self.mock_im_service.create_authorization_button.return_value = [{"type": "button"}]
-        self.mock_im_service.send_message.return_value = True
+        self.mock_im_service.send_message = AsyncMock(return_value=True)
         
         # Call the function
         result = await handle_user_message(

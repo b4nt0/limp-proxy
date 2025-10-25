@@ -90,7 +90,7 @@ async def handle_user_message(
                 
                 # Send DM to user's private channel (not the original channel)
                 user_dm_channel = im_service.get_user_dm_channel(message_data["user_id"])
-                im_service.send_message(
+                await im_service.send_message(
                     user_dm_channel,
                     authorization_prompt,
                     button_metadata
