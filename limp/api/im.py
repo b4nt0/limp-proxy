@@ -781,15 +781,22 @@ def get_conversation_history(db: Session, conversation_id: int, im_service=None,
     config = get_config()
     context_manager = ContextManager(config.llm)
     
-    # Use context manager to reconstruct history with summaries
-    history = context_manager.reconstruct_history_with_summary(db, conversation_id)
+    # Get raw messages for break detection
+    raw_messages = db.query(Message).filter(
+        Message.conversation_id == conversation_id
+    ).order_by(Message.created_at.asc()).all()
     
-    # Check for conversation break indicators and trim history if needed
-    break_index = detect_conversation_break_from_formatted_history(history, platform, config)
+    # Check for conversation break indicators using raw messages
+    break_index = detect_conversation_break_from_messages(raw_messages, platform, config)
     if break_index > 0:
         logger.info(f"Trimming conversation history at index {break_index}")
-        history = history[break_index:]
-    
+        # Trim raw messages before formatting
+        raw_messages = raw_messages[break_index:]
+        # Use context manager to reconstruct history with summaries (now with trimmed messages)
+        history = context_manager.reconstruct_history_with_summary_from_messages(raw_messages)
+    else:
+        # No break detected, use the original method for backward compatibility
+        history = context_manager.reconstruct_history_with_summary(db, conversation_id)
     
     # Check if we need to summarize the conversation
     if context_manager.should_summarize(history):

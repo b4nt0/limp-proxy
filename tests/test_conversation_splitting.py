@@ -210,10 +210,9 @@ class TestConversationSplitting:
         assert history[0]["content"] == "Start over", f"Expected 'Start over', got {history[0]['content']}"
         assert history[1]["content"] == "I'm ready to help!", f"Expected 'I'm ready to help!', got {history[1]['content']}"
         
-        # Verify created_at field is present
+        # Verify that created_at field is NOT present (removed for JSON serialization)
         for message in history:
-            assert "created_at" in message, "created_at field missing from formatted message"
-            assert isinstance(message["created_at"], datetime), "created_at should be datetime object"
+            assert "created_at" not in message, "created_at field should not be present in LLM messages"
     
     def test_time_based_integration_with_database(self, test_session: Session, test_config):
         """Test time-based break detection with database."""

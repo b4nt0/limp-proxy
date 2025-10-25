@@ -294,6 +294,50 @@ Summary:"""
         
         return reconstructed
     
+    def reconstruct_history_with_summary_from_messages(self, messages: List[Message]) -> List[Dict[str, str]]:
+        """Reconstruct conversation history with summaries from a list of messages."""
+        if not messages:
+            return []
+        
+        # Find the latest summary
+        latest_summary = None
+        latest_summary_index = -1
+        
+        for i, message in enumerate(messages):
+            if message.role == "summary":
+                latest_summary = message
+                latest_summary_index = i
+        
+        # If no summary exists, return all messages
+        if latest_summary is None:
+            return self._format_messages_for_llm(messages)
+        
+        # Get messages from the beginning up to the summary (preserving all initial context)
+        messages_before_summary = messages[:latest_summary_index]
+        
+        # Get messages after the latest summary
+        messages_after_summary = messages[latest_summary_index + 1:]
+        
+        # Reconstruct history: all initial messages + summary + messages after summary
+        reconstructed = []
+        
+        # Add all messages from the beginning (preserving system messages, etc.)
+        formatted_initial_messages = self._format_messages_for_llm(messages_before_summary)
+        reconstructed.extend(formatted_initial_messages)
+        
+        # Add the summary as a system message
+        if latest_summary:
+            reconstructed.append({
+                "role": "system",
+                "content": f"Previous conversation summary: {latest_summary.content}"
+            })
+        
+        # Add messages after the summary using the existing formatting logic
+        formatted_messages_after_summary = self._format_messages_for_llm(messages_after_summary)
+        reconstructed.extend(formatted_messages_after_summary)
+        
+        return reconstructed
+    
     def _format_messages_for_llm(self, messages: List[Message]) -> List[Dict[str, str]]:
         """Format database messages for LLM consumption with tool call optimization."""
         formatted = []
