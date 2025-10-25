@@ -17,7 +17,7 @@ from .im import IMService
 logger = logging.getLogger(__name__)
 
 
-class TeamsEchoBot(ActivityHandler):
+class TeamsLIMPBot(ActivityHandler):
     """Teams bot that integrates with the shared message handling pipeline."""
     
     def __init__(self, teams_service, db_session):
@@ -29,14 +29,14 @@ class TeamsEchoBot(ActivityHandler):
         """Handle incoming messages through the shared pipeline."""
         try:
             text = turn_context.activity.text or ""
-            logger.info(f"TeamsEchoBot received message: {text}")
+            logger.info(f"TeamsLIMPBot received message: {text}")
             
             # Store the turn context for use in responses
             self.current_turn_context = turn_context
             
-            # If no database session, fall back to simple echo
+            # If no database session, fall back to simple response
             if not self.db_session:
-                await turn_context.send_activity(f"Echo: {text}")
+                await turn_context.send_activity(f"Hello! I received your message: {text}")
                 return
             
             # Parse the activity into message data for the shared pipeline
@@ -57,18 +57,18 @@ class TeamsEchoBot(ActivityHandler):
                 logger.info(f"Teams message processing result: {result}")
                 
                 # If the shared pipeline handled the response, we're done
-                # If not, we could fall back to echo or other Teams-specific handling
+                # If not, we could fall back to a simple response or other Teams-specific handling
                 if result.get("status") != "ok":
-                    # Fallback to simple echo if shared pipeline fails
-                    await turn_context.send_activity(f"Echo: {text}")
+                    # Fallback to simple response if shared pipeline fails
+                    await turn_context.send_activity(f"I received your message: {text}")
             else:
-                # For non-message activities, just echo
-                await turn_context.send_activity(f"Echo: {text}")
+                # For non-message activities, just acknowledge
+                await turn_context.send_activity(f"I received your activity: {text}")
                 
         except Exception as e:
-            logger.error(f"Error in TeamsEchoBot message handling: {e}")
-            # Fallback to simple echo on error
-            await turn_context.send_activity(f"Echo: {turn_context.activity.text or ''}")
+            logger.error(f"Error in TeamsLIMPBot message handling: {e}")
+            # Fallback to simple response on error
+            await turn_context.send_activity(f"I received your message: {turn_context.activity.text or ''}")
     
     async def send_response(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """Send a response using the current turn context."""
@@ -77,8 +77,8 @@ class TeamsEchoBot(ActivityHandler):
                 logger.error("No turn context available for sending response")
                 return False
             
-            logger.info(f"TeamsEchoBot sending response: {content}")
-            logger.info(f"TeamsEchoBot metadata: {metadata}")
+            logger.info(f"TeamsLIMPBot sending response: {content}")
+            logger.info(f"TeamsLIMPBot metadata: {metadata}")
             
             # Create activity with content and metadata
             activity = Activity(
@@ -90,28 +90,28 @@ class TeamsEchoBot(ActivityHandler):
             if metadata and metadata.get("blocks"):
                 # Handle Teams-specific content from the blocks
                 blocks = metadata["blocks"]
-                logger.info(f"TeamsEchoBot blocks: {blocks}")
+                logger.info(f"TeamsLIMPBot blocks: {blocks}")
                 
                 # Check if we have Adaptive Cards (authorization buttons)
                 if blocks and len(blocks) > 0:
                     first_block = blocks[0]
                     if first_block.get("contentType") == "application/vnd.microsoft.card.adaptive":
                         # This is an Adaptive Card - send it as an attachment
-                        logger.info("TeamsEchoBot detected Adaptive Card, sending as attachment")
+                        logger.info("TeamsLIMPBot detected Adaptive Card, sending as attachment")
                         activity.attachments = [first_block]
                         # Keep the main content as text
-                        logger.info(f"TeamsEchoBot sending Adaptive Card with text: {content}")
+                        logger.info(f"TeamsLIMPBot sending Adaptive Card with text: {content}")
                     else:
                         # This is plain text content - combine it
                         auth_content = first_block.get("content", "")
                         if auth_content:
                             combined_content = f"{content}\n\n{auth_content}"
                             activity.text = combined_content
-                            logger.info(f"TeamsEchoBot combined content: {combined_content}")
+                            logger.info(f"TeamsLIMPBot combined content: {combined_content}")
             
             if metadata and metadata.get("attachments"):
                 activity.attachments = metadata["attachments"]
-                logger.info(f"TeamsEchoBot attachments: {metadata['attachments']}")
+                logger.info(f"TeamsLIMPBot attachments: {metadata['attachments']}")
             
             # Send using turn context (this is the working pattern)
             await self.current_turn_context.send_activity(activity)
@@ -145,7 +145,7 @@ class TeamsService(IMService):
         self._config = TeamsServiceConfig(self.app_id, 
           self.client_secret, 'SingleTenant', self.client_id)
         
-        # Initialize BotFrameworkAdapter and EchoBot
+        # Initialize BotFrameworkAdapter and LIMPBot
         self._adapter = self._create_adapter()
         self._adapter.on_turn_error = self.on_error
         
@@ -170,7 +170,7 @@ class TeamsService(IMService):
             # Deserialize activity from request data
             activity = Activity().deserialize(activity_data)
             
-            bot = TeamsEchoBot(self, db)
+            bot = TeamsLIMPBot(self, db)
 
             # Store the current bot instance so send_message can access it
             self._current_bot = bot
@@ -263,12 +263,28 @@ class TeamsService(IMService):
     
     def reply_to_message(self, channel: str, content: str, original_message_ts: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """Reply to a message in Teams."""
-        # For Teams, since DMs don't support threads, we send a new message
-        # This is still a "reply" conceptually, but implemented as a new message
-        # Implementation would use Teams Bot Framework
-        # For now, return True as placeholder
-        logger.info(f"Replying to Teams message {original_message_ts} in channel {channel} (as new message): {content}")
-        return True
+        try:
+            logger.info(f"Replying to Teams message {original_message_ts} in channel {channel}: {content}")
+            logger.info(f"Teams reply metadata: {metadata}")
+            
+            # For Teams, since DMs don't support threads, we send a new message
+            # This is still a "reply" conceptually, but implemented as a new message
+            # Use the current bot's turn context if available
+            if hasattr(self, '_current_bot') and self._current_bot and self._current_bot.current_turn_context:
+                logger.info("TeamsService delegating reply to bot.send_response")
+                # Use the bot's send_response method (uses turn_context.send_activity)
+                import asyncio
+                asyncio.create_task(self._current_bot.send_response(content, metadata))
+                logger.info(f"Successfully sent Teams reply: {content}")
+                return True
+            else:
+                logger.warning("No current bot turn context available for reply")
+                logger.warning("This usually means the reply is being sent outside of a message activity context")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error sending Teams reply: {e}")
+            return False
     
     def create_authorization_button(self, auth_url: str, button_text: str, button_description: str, request=None) -> List[Dict[str, Any]]:
         """Create authorization button blocks for Teams using Adaptive Cards."""
@@ -349,14 +365,21 @@ class TeamsService(IMService):
             formatted_content = f"[{content}]"
             logger.info(f"Sending temporary message to Teams channel {channel}: {formatted_content}")
             
-            # For Teams, we'll use a simple message and return a placeholder ID
-            # In a real implementation, you'd use the Teams Bot Framework
-            # Teams threading is handled differently, but we can still use the original_message_ts for context
-            success = self.send_message(channel, formatted_content)
-            if success:
+            # Use the current bot's turn context if available
+            if hasattr(self, '_current_bot') and self._current_bot and self._current_bot.current_turn_context:
+                logger.info("TeamsService delegating temporary message to bot.send_response")
+                # Use the bot's send_response method (uses turn_context.send_activity)
+                import asyncio
+                asyncio.create_task(self._current_bot.send_response(formatted_content))
+                
                 # Return a placeholder ID - in real implementation, you'd get the actual message ID
-                return f"teams_temp_{channel}_{hash(formatted_content)}"
-            return None
+                message_id = f"teams_temp_{channel}_{hash(formatted_content)}"
+                logger.info(f"Sent Teams temporary message with ID: {message_id}")
+                return message_id
+            else:
+                logger.warning("No current bot turn context available for temporary message")
+                return None
+                
         except Exception as e:
             logger.error(f"Error sending Teams temporary message: {e}")
             return None

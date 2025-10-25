@@ -58,7 +58,7 @@ def test_teams_message_parsing():
 
 @pytest.mark.asyncio
 async def test_teams_echo_functionality():
-    """Test that Teams echo functionality works through the original EchoBot approach."""
+    """Test that Teams functionality works through the LIMPBot approach."""
     from limp.services.teams import TeamsService
     from unittest.mock import Mock, AsyncMock
     
@@ -90,7 +90,7 @@ async def test_teams_echo_functionality():
 @pytest.mark.asyncio
 async def test_teams_integration_with_shared_pipeline():
     """Test that Teams integrates with the shared message handling pipeline."""
-    from limp.services.teams import TeamsService, TeamsEchoBot
+    from limp.services.teams import TeamsService, TeamsLIMPBot
     from unittest.mock import Mock, AsyncMock
     
     # Create a mock Teams service
@@ -100,7 +100,7 @@ async def test_teams_integration_with_shared_pipeline():
     mock_db = Mock()
     
     # Create bot with database session
-    bot = TeamsEchoBot(teams_service, mock_db)
+    bot = TeamsLIMPBot(teams_service, mock_db)
     
     # Mock the handle_user_message function
     with patch('limp.api.im.handle_user_message') as mock_handle:
