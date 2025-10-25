@@ -21,10 +21,15 @@ class TestBuiltinTools:
         tools_service = ToolsService()
         builtin_tools = tools_service.get_builtin_tools()
         
-        assert len(builtin_tools) == 1
+        assert len(builtin_tools) == 2
         assert builtin_tools[0]["type"] == "function"
         assert builtin_tools[0]["function"]["name"] == "LimpBuiltinStartOver"
         assert "Start a new conversation" in builtin_tools[0]["function"]["description"]
+        
+        # Check the new authorization tool
+        assert builtin_tools[1]["type"] == "function"
+        assert builtin_tools[1]["function"]["name"] == "LimpBuiltinRequestAuthorization"
+        assert "Request authorization for external systems" in builtin_tools[1]["function"]["description"]
     
     def test_limpbultin_start_over_execution(self):
         """Test LimpBuiltinStartOver tool execution."""
@@ -89,8 +94,8 @@ class TestBuiltinTools:
             builtin_tools = tools_service.get_builtin_tools()
             all_tools = external_tools + builtin_tools
             
-            # Should have both external and builtin tools
-            assert len(all_tools) == 2
+            # Should have both external and builtin tools (1 external + 2 builtin)
+            assert len(all_tools) == 3
             assert any(tool["function"]["name"] == "external_tool" for tool in all_tools)
             assert any(tool["function"]["name"] == "LimpBuiltinStartOver" for tool in all_tools)
     

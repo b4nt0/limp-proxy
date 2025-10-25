@@ -390,6 +390,47 @@ async def process_llm_workflow(
                     if tool_name.startswith("LimpBuiltin") and tool_result.get("action") == "start_over":
                         # Store /new system message in database
                         store_system_message(db, conversation_id, "/new")
+                    
+                    elif tool_name.startswith("LimpBuiltin") and tool_result.get("action") == "request_authorization":
+                        # Handle authorization request from built-in tool
+                        requested_tool_name = tool_result.get("tool_name")
+                        
+                        # Determine which system to request authorization for
+                        if requested_tool_name:
+                            # Try to find the system for the specific tool
+                            try:
+                                system_name = tools_service.get_system_name_for_tool(requested_tool_name, system_configs)
+                                system_config = get_system_config(system_name, system_configs)
+                            except (ValueError, KeyError):
+                                # Tool not found, fall back to primary system
+                                primary_system = get_config().get_primary_system()
+                                if primary_system:
+                                    system_name = primary_system.name
+                                    system_config = primary_system
+                                else:
+                                    # No primary system available
+                                    continue
+                        else:
+                            # No specific tool requested, use primary system
+                            primary_system = get_config().get_primary_system()
+                            if primary_system:
+                                system_name = primary_system.name
+                                system_config = primary_system
+                            else:
+                                # No primary system available
+                                continue
+                        
+                        # Generate authorization URL
+                        auth_url = oauth2_service.generate_auth_url(user.id, system_config, bot_url)
+                        
+                        # Update the tool result content for proper storage
+                        tool_result_content = f"Authorization required for {system_name}. Please authorize access: {auth_url}"
+                        
+                        # Return authorization URL with special metadata
+                        return {
+                            "content": f"Please authorize access to {system_name}: {auth_url}",
+                            "metadata": {"auth_url": auth_url, "authorization_required": True, "system_name": system_name}
+                        }
 
                     
                     # Add debug message for tool response if debug mode is enabled

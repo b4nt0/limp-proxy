@@ -512,6 +512,23 @@ class ToolsService:
                         "required": []
                     }
                 }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "LimpBuiltinRequestAuthorization",
+                    "description": "Request authorization for external systems. Use this when you need access to external tools but the user hasn't authorized them yet. You can specify a particular tool name if you know which one you need.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "tool_name": {
+                                "type": "string",
+                                "description": "Optional name of the specific external tool that requires authorization. If the AI has recently failed to access a certain external tool, use its name. If not provided, will request authorization for the primary system."
+                            }
+                        },
+                        "required": []
+                    }
+                }
             }
         ]
     

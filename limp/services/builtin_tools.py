@@ -47,3 +47,29 @@ class LimpBuiltinStartOver(LimpBuiltinTool):
             "result": "New conversation successfully started",
             "action": "start_over"
         }
+
+
+class LimpBuiltinRequestAuthorization(LimpBuiltinTool):
+    """Builtin tool to request authorization for external systems."""
+    
+    def _execute(self, arguments: str) -> Dict[str, Any]:
+        """Execute the authorization request tool."""
+        # Parse arguments if provided
+        try:
+            args = json.loads(arguments) if arguments else {}
+        except json.JSONDecodeError:
+            return {
+                "success": False,
+                "error": "Invalid JSON arguments for authorization request"
+            }
+        
+        # Extract tool name from arguments (optional)
+        tool_name = args.get("tool_name")
+        
+        # Return authorization request result
+        return {
+            "success": True,
+            "result": f"Authorization requested for {tool_name if tool_name else 'external system'}",
+            "action": "request_authorization",
+            "tool_name": tool_name
+        }

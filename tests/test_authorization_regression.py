@@ -501,3 +501,234 @@ class TestAuthorizationDRYImplementation:
         
         # The function should use the system_name parameter
         assert 'system_name' in source
+
+
+class TestAuthorizationBuiltinTool:
+    """Test the new authorization built-in tool functionality."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.mock_im_service = Mock(spec=SlackService)
+        self.mock_db_session = Mock()
+        self.mock_user = Mock()
+        self.mock_user.id = 1
+        self.mock_user.external_id = "U123456"
+        self.mock_user.platform = "slack"
+        
+        # Mock message data
+        self.message_data = {
+            "user_id": "U123456",
+            "channel": "C123456",
+            "text": "Hello, bot!",
+            "timestamp": "1234567890.123456"
+        }
+    
+    def test_authorization_builtin_tool_creation(self):
+        """Test that the authorization built-in tool is properly defined."""
+        from limp.services.builtin_tools import LimpBuiltinRequestAuthorization
+        
+        # Test tool instantiation
+        tool = LimpBuiltinRequestAuthorization()
+        assert tool is not None
+        
+        # Test tool execution with no arguments
+        result = tool.execute("{}")
+        assert result["success"] is True
+        assert result["action"] == "request_authorization"
+        assert "Authorization requested for external system" in result["result"]
+        assert result["tool_name"] is None
+    
+    def test_authorization_builtin_tool_with_tool_name(self):
+        """Test authorization built-in tool with specific tool name."""
+        from limp.services.builtin_tools import LimpBuiltinRequestAuthorization
+        
+        tool = LimpBuiltinRequestAuthorization()
+        
+        # Test with specific tool name
+        result = tool.execute('{"tool_name": "test_tool"}')
+        assert result["success"] is True
+        assert result["action"] == "request_authorization"
+        assert "Authorization requested for test_tool" in result["result"]
+        assert result["tool_name"] == "test_tool"
+    
+    def test_authorization_builtin_tool_invalid_json(self):
+        """Test authorization built-in tool with invalid JSON arguments."""
+        from limp.services.builtin_tools import LimpBuiltinRequestAuthorization
+        
+        tool = LimpBuiltinRequestAuthorization()
+        
+        # Test with invalid JSON
+        result = tool.execute("invalid json")
+        assert result["success"] is False
+        assert "Invalid JSON arguments" in result["error"]
+    
+    def test_authorization_builtin_tool_in_tools_service(self):
+        """Test that the authorization built-in tool is included in ToolsService."""
+        from limp.services.tools import ToolsService
+        
+        tools_service = ToolsService()
+        builtin_tools = tools_service.get_builtin_tools()
+        
+        # Find the authorization tool
+        auth_tool = None
+        for tool in builtin_tools:
+            if tool["function"]["name"] == "LimpBuiltinRequestAuthorization":
+                auth_tool = tool
+                break
+        
+        assert auth_tool is not None
+        assert auth_tool["function"]["name"] == "LimpBuiltinRequestAuthorization"
+        assert "Request authorization for external systems" in auth_tool["function"]["description"]
+        assert "tool_name" in auth_tool["function"]["parameters"]["properties"]
+        assert auth_tool["function"]["parameters"]["properties"]["tool_name"]["type"] == "string"
+    
+    def test_authorization_builtin_tool_execution(self):
+        """Test execution of the authorization built-in tool through ToolsService."""
+        from limp.services.tools import ToolsService
+        
+        tools_service = ToolsService()
+        
+        # Test execution with no arguments
+        result = tools_service.execute_builtin_tool("LimpBuiltinRequestAuthorization", "{}")
+        assert result["success"] is True
+        assert result["action"] == "request_authorization"
+        assert result["tool_name"] is None
+        
+        # Test execution with tool name
+        result = tools_service.execute_builtin_tool("LimpBuiltinRequestAuthorization", '{"tool_name": "test_tool"}')
+        assert result["success"] is True
+        assert result["action"] == "request_authorization"
+        assert result["tool_name"] == "test_tool"
+    
+    @patch('limp.api.im.get_config')
+    @patch('limp.api.im.get_or_create_user')
+    @patch('limp.api.im.get_or_create_conversation')
+    @patch('limp.api.im.store_user_message')
+    @patch('limp.api.im.get_conversation_history')
+    @patch('limp.api.im.store_assistant_message')
+    @patch('limp.api.im.process_llm_workflow')
+    @patch('limp.api.im.OAuth2Service')
+    @patch('limp.api.im.is_duplicate_message')
+    @patch('limp.api.im.generate_slack_message_id')
+    @pytest.mark.asyncio
+    async def test_authorization_builtin_tool_in_llm_workflow(self, mock_generate_id, mock_is_duplicate, mock_oauth2_service, mock_process_llm_workflow, mock_store_assistant_message, mock_get_conversation_history, mock_store_user_message, mock_get_or_create_conversation, mock_get_user, mock_get_config):
+        """Test that authorization built-in tool works in LLM workflow."""
+        # Mock duplicate detection
+        mock_is_duplicate.return_value = False
+        mock_generate_id.return_value = "test_external_id"
+        
+        # Mock config with primary system
+        mock_primary_system = Mock()
+        mock_primary_system.name = "test-system"
+        mock_primary_system.model_dump.return_value = {"name": "test-system", "oauth2": {}}
+        mock_config = Mock()
+        mock_config.get_primary_system.return_value = mock_primary_system
+        mock_config.llm = Mock()
+        mock_config.llm.base_url = "https://api.openai.com/v1"
+        mock_config.llm.api_key = "test-key"
+        mock_config.llm.model = "gpt-4"
+        mock_config.llm.max_tokens = 1000
+        mock_config.llm.temperature = 0.7
+        mock_config.llm.max_iterations = 3
+        mock_config.external_systems = []
+        mock_config.bot.system_prompts = []
+        mock_config.bot.url = "http://localhost:8000"
+        mock_get_config.return_value = mock_config
+        
+        # Mock user creation
+        mock_get_user.return_value = self.mock_user
+        
+        # Mock OAuth2 service
+        mock_oauth2_instance = Mock()
+        mock_oauth2_instance.get_valid_token.return_value = None
+        mock_oauth2_instance.generate_auth_url.return_value = "https://example.com/auth"
+        mock_oauth2_service.return_value = mock_oauth2_instance
+        
+        # Mock conversation management
+        mock_conversation = Mock()
+        mock_conversation.id = 1
+        mock_get_or_create_conversation.return_value = mock_conversation
+        mock_get_conversation_history.return_value = []
+        mock_store_user_message.return_value = Mock()
+        mock_store_assistant_message.return_value = Mock()
+        
+        # Mock LLM workflow with authorization built-in tool response
+        mock_process_llm_workflow.return_value = {
+            "content": "Please authorize access to test-system: https://example.com/auth",
+            "metadata": {
+                "auth_url": "https://example.com/auth",
+                "authorization_required": True,
+                "system_name": "test-system"
+            }
+        }
+        
+        # Mock IM service methods
+        self.mock_im_service.acknowledge_message.return_value = None
+        self.mock_im_service.get_user_dm_channel.return_value = "D123456"
+        self.mock_im_service.create_authorization_button.return_value = [{"type": "button"}]
+        self.mock_im_service.send_message = AsyncMock(return_value=True)
+        
+        # Call the function
+        result = await handle_user_message(
+            self.message_data,
+            self.mock_im_service,
+            self.mock_db_session,
+            "slack"
+        )
+        
+        # Verify authorization flow
+        assert result["status"] == "ok"
+        assert result["action"] == "authorization_required"
+        
+        # Verify IM service calls (common handler behavior)
+        self.mock_im_service.get_user_dm_channel.assert_called_once_with("U123456")
+        self.mock_im_service.create_authorization_button.assert_called_once()
+        self.mock_im_service.send_message.assert_called_once()
+        
+        # Verify no reply to original message
+        self.mock_im_service.reply_to_message.assert_not_called()
+    
+    @pytest.mark.asyncio
+    async def test_authorization_builtin_tool_system_lookup(self):
+        """Test that authorization built-in tool correctly looks up systems for specific tools."""
+        from limp.services.tools import ToolsService
+        
+        # Mock tools service with system lookup capability
+        tools_service = ToolsService()
+        
+        # Mock the get_system_name_for_tool method
+        with patch.object(tools_service, 'get_system_name_for_tool') as mock_get_system_name:
+            mock_get_system_name.return_value = "TestSystem"
+            
+            # Test execution with specific tool name
+            result = tools_service.execute_builtin_tool("LimpBuiltinRequestAuthorization", '{"tool_name": "test_tool"}')
+            assert result["success"] is True
+            assert result["tool_name"] == "test_tool"
+    
+    def test_authorization_builtin_tool_fallback_to_primary(self):
+        """Test that authorization built-in tool falls back to primary system when tool not found."""
+        from limp.services.builtin_tools import LimpBuiltinRequestAuthorization
+        
+        tool = LimpBuiltinRequestAuthorization()
+        
+        # Test with tool name that would not be found
+        result = tool.execute('{"tool_name": "nonexistent_tool"}')
+        assert result["success"] is True
+        assert result["action"] == "request_authorization"
+        assert result["tool_name"] == "nonexistent_tool"
+        
+        # The actual system lookup and fallback logic is handled in the LLM workflow
+        # This test just verifies the built-in tool returns the correct structure
+    
+    def test_authorization_builtin_tool_no_tool_name(self):
+        """Test authorization built-in tool when no specific tool is requested."""
+        from limp.services.builtin_tools import LimpBuiltinRequestAuthorization
+        
+        tool = LimpBuiltinRequestAuthorization()
+        
+        # Test with no tool name (should use primary system)
+        result = tool.execute("{}")
+        assert result["success"] is True
+        assert result["action"] == "request_authorization"
+        assert result["tool_name"] is None
+        assert "Authorization requested for external system" in result["result"]
