@@ -2,7 +2,7 @@
 Conversation and message models for chat history.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, JSON, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -15,7 +15,9 @@ class Conversation(Base):
     __tablename__ = "conversations"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    channel_id = Column(String, nullable=True, index=True)  # Channel identifier (Slack channel, Teams channel, etc.)
+    thread_id = Column(String, nullable=True, index=True)  # Thread identifier (Slack thread_ts, Teams conversation_id, etc.)
     context = Column(JSON, nullable=True)  # Additional context data
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -40,6 +42,11 @@ class Message(Base):
     external_id = Column(String, nullable=True)  # Unique identifier from external system
     message_metadata = Column(JSON, nullable=True)  # Additional message metadata
     created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Index for external_id to support duplicate detection
+    __table_args__ = (
+        Index('ix_messages_external_id', 'external_id'),
+    )
     
     # Relationship
     conversation = relationship("Conversation", back_populates="messages")

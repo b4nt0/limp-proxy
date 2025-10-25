@@ -463,26 +463,55 @@ def get_or_create_conversation(db: Session, user_id: int, message_data: Dict[str
     config = get_config()
     
     if platform.lower() == "slack":
-        # For Slack, use thread_ts to determine conversation
+        # For Slack, extract channel and thread identifiers
+        channel_id = message_data.get("channel")
         thread_ts = message_data.get("thread_ts")
+        
+        # If message contains thread identifier, use that (ignore channel for thread messages)
         if thread_ts:
-            # This is a reply in a thread - find existing conversation
-            # Query all conversations for this user and check JSON manually
-            conversations = db.query(Conversation).filter(
-                Conversation.user_id == user_id
-            ).all()
+            existing_conversation = db.query(Conversation).filter(
+                Conversation.user_id == user_id,
+                Conversation.thread_id == thread_ts
+            ).first()
             
-            for conv in conversations:
-                if conv.context and conv.context.get("thread_ts") == thread_ts:
-                    return conv
+            if existing_conversation:
+                return existing_conversation
+        
+        # If no thread identifier, try to find conversation by channel with empty thread_id
+        if channel_id:
+            existing_conversation = db.query(Conversation).filter(
+                Conversation.user_id == user_id,
+                Conversation.channel_id == channel_id,
+                Conversation.thread_id.is_(None)
+            ).first()
+            
+            if existing_conversation:
+                return existing_conversation
+        
+        # Check for /new command to force new conversation
+        text = message_data.get("text", "").strip()
+        if text == "/new":
+            # Force new conversation - don't check for existing ones
+            pass
+        else:
+            # If nothing specified, use most recent conversation
+            recent_conversation = db.query(Conversation).filter(
+                Conversation.user_id == user_id
+            ).order_by(Conversation.created_at.desc()).first()
+            
+            if recent_conversation and not thread_ts and not channel_id:
+                return recent_conversation
         
         # Create new conversation for Slack
         context = {
-            "thread_ts": message_data.get("timestamp"),  # Use message timestamp as thread root
-            "channel": message_data.get("channel")
+            "channel": channel_id,
+            "thread_ts": thread_ts or message_data.get("timestamp")  # Use message timestamp as thread root if no thread_ts
         }
+        
         conversation = Conversation(
             user_id=user_id,
+            channel_id=channel_id,
+            thread_id=thread_ts or message_data.get("timestamp"),
             context=context
         )
         db.add(conversation)
@@ -491,32 +520,66 @@ def get_or_create_conversation(db: Session, user_id: int, message_data: Dict[str
         return conversation
     
     elif platform.lower() == "teams":
-        # For Teams, check if we need a new conversation based on timeout
-        # Get the most recent conversation for this user
-        recent_conversation = db.query(Conversation).filter(
-            Conversation.user_id == user_id
-        ).order_by(Conversation.created_at.desc()).first()
+        # For Teams, extract channel and conversation identifiers
+        activity = message_data.get("activity", {})
+        channel_id = activity.get("channel_id")
+        conversation_id = activity.get("conversation", {}).get("id")
         
-        # Check for /new command
+        # If message contains thread identifier (conversation_id), use that (ignore channel for thread messages)
+        if conversation_id:
+            existing_conversation = db.query(Conversation).filter(
+                Conversation.user_id == user_id,
+                Conversation.thread_id == conversation_id
+            ).first()
+            
+            if existing_conversation:
+                return existing_conversation
+        
+        # If no thread identifier, try to find conversation by channel with empty thread_id
+        if channel_id:
+            existing_conversation = db.query(Conversation).filter(
+                Conversation.user_id == user_id,
+                Conversation.channel_id == channel_id,
+                Conversation.thread_id.is_(None)
+            ).first()
+            
+            if existing_conversation:
+                return existing_conversation
+        
+        # Check for /new command to force new conversation
         text = message_data.get("text", "").strip()
         if text == "/new":
-            # Force new conversation
-            recent_conversation = None
-        
-        # Check timeout for Teams DMs (not channels)
-        if recent_conversation and should_create_new_conversation(recent_conversation, config, message_data):
-            recent_conversation = None
-        
-        if recent_conversation:
-            return recent_conversation
+            # Force new conversation - don't check for existing ones
+            pass
+        else:
+            # Check timeout for Teams DMs (not channels) - get most recent conversation
+            recent_conversation = db.query(Conversation).filter(
+                Conversation.user_id == user_id
+            ).order_by(Conversation.created_at.desc()).first()
+            
+            if recent_conversation and should_create_new_conversation(recent_conversation, config, message_data):
+                # Timeout reached, create new conversation
+                pass
+            elif recent_conversation and not conversation_id and not channel_id:
+                # No specific conversation/channel identifiers, use most recent
+                return recent_conversation
         
         # Create new conversation for Teams
         context = {
             "channel": message_data.get("channel"),
             "conversation_type": "dm" if message_data.get("channel", "").startswith("19:") else "channel"
         }
+        
+        # Add conversation identifiers to context for backward compatibility
+        if conversation_id:
+            context["conversation_id"] = conversation_id
+        if channel_id:
+            context["channel_id"] = channel_id
+            
         conversation = Conversation(
             user_id=user_id,
+            channel_id=channel_id,
+            thread_id=conversation_id,
             context=context
         )
         db.add(conversation)
