@@ -326,7 +326,18 @@ class TeamsService(IMService):
         try:
             ack_content = "✅ Processing your request..."
             logger.info(f"Sending acknowledgment to Teams channel {channel}")
-            return self.send_message(channel, ack_content)
+            
+            # Use the current bot's turn context if available
+            if hasattr(self, '_current_bot') and self._current_bot and self._current_bot.current_turn_context:
+                # Send the acknowledgment using the bot's send_response method
+                import asyncio
+                asyncio.create_task(self._current_bot.send_response(ack_content))
+                logger.info(f"Sent Teams acknowledgment: {ack_content}")
+                return True
+            else:
+                logger.warning("No current bot turn context available for acknowledgment")
+                return False
+                
         except Exception as e:
             logger.error(f"Error sending Teams acknowledgment: {e}")
             return False
@@ -366,16 +377,26 @@ class TeamsService(IMService):
             return False
     
     def complete_message(self, channel: str, message_ts: str, success: bool) -> bool:
-        """Complete a message (placeholder implementation for Teams)."""
-        # For Teams, message completion is more complex and depends on the Bot Framework
-        # This is a placeholder implementation
+        """Complete a message by sending a status message to Teams."""
         try:
             status_emoji = "✅" if success else "❌"
             status_text = "completed successfully" if success else "failed"
-            logger.info(f"Teams message {message_ts} {status_text} - would show {status_emoji}")
-            # In a real implementation, you'd use the Teams Bot Framework to update the message
-            # For now, we'll just log the completion status
-            return True
+            logger.info(f"Teams message {message_ts} {status_text} - sending {status_emoji}")
+            
+            # Send a status message since Teams doesn't support reactions like Slack
+            status_message = f"{status_emoji} Request {status_text}"
+            
+            # Use the current bot's turn context if available
+            if hasattr(self, '_current_bot') and self._current_bot and self._current_bot.current_turn_context:
+                # Send the status message using the bot's send_response method
+                import asyncio
+                asyncio.create_task(self._current_bot.send_response(status_message))
+                logger.info(f"Sent Teams status message: {status_message}")
+                return True
+            else:
+                logger.warning("No current bot turn context available for status message")
+                return False
+                
         except Exception as e:
             logger.error(f"Error completing Teams message: {e}")
             return False
