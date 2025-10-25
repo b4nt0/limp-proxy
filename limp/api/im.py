@@ -118,7 +118,8 @@ async def handle_user_message(
             conversation.id, 
             im_service, 
             message_data["channel"], 
-            message_data.get("timestamp")
+            message_data.get("timestamp"),
+            platform
         )
         
         # Create services
@@ -488,19 +489,13 @@ def get_or_create_conversation(db: Session, user_id: int, message_data: Dict[str
             if existing_conversation:
                 return existing_conversation
         
-        # Check for /new command to force new conversation
-        text = message_data.get("text", "").strip()
-        if text == "/new":
-            # Force new conversation - don't check for existing ones
-            pass
-        else:
-            # If nothing specified, use most recent conversation
-            recent_conversation = db.query(Conversation).filter(
-                Conversation.user_id == user_id
-            ).order_by(Conversation.created_at.desc()).first()
-            
-            if recent_conversation and not thread_ts and not channel_id:
-                return recent_conversation
+        # If nothing specified, use most recent conversation
+        recent_conversation = db.query(Conversation).filter(
+            Conversation.user_id == user_id
+        ).order_by(Conversation.created_at.desc()).first()
+        
+        if recent_conversation and not thread_ts and not channel_id:
+            return recent_conversation
         
         # Create new conversation for Slack
         context = {
@@ -546,23 +541,14 @@ def get_or_create_conversation(db: Session, user_id: int, message_data: Dict[str
             if existing_conversation:
                 return existing_conversation
         
-        # Check for /new command to force new conversation
-        text = message_data.get("text", "").strip()
-        if text == "/new":
-            # Force new conversation - don't check for existing ones
-            pass
-        else:
-            # Check timeout for Teams DMs (not channels) - get most recent conversation
-            recent_conversation = db.query(Conversation).filter(
-                Conversation.user_id == user_id
-            ).order_by(Conversation.created_at.desc()).first()
-            
-            if recent_conversation and should_create_new_conversation(recent_conversation, config, message_data):
-                # Timeout reached, create new conversation
-                pass
-            elif recent_conversation and not conversation_id and not channel_id:
-                # No specific conversation/channel identifiers, use most recent
-                return recent_conversation
+        # Get most recent conversation for Teams
+        recent_conversation = db.query(Conversation).filter(
+            Conversation.user_id == user_id
+        ).order_by(Conversation.created_at.desc()).first()
+        
+        if recent_conversation and not conversation_id and not channel_id:
+            # No specific conversation/channel identifiers, use most recent
+            return recent_conversation
         
         # Create new conversation for Teams
         context = {
@@ -594,24 +580,6 @@ def get_or_create_conversation(db: Session, user_id: int, message_data: Dict[str
         db.commit()
         db.refresh(conversation)
         return conversation
-
-
-def should_create_new_conversation(conversation: Conversation, config, message_data: Dict[str, Any]) -> bool:
-    """Check if a new conversation should be created based on timeout rules."""
-    # Only apply timeout rules to Teams DMs
-    if not conversation.context or conversation.context.get("conversation_type") != "dm":
-        return False
-    
-    # Get Teams platform config
-    try:
-        teams_config = config.get_im_platform_by_key("teams")
-        timeout_hours = teams_config.conversation_timeout_hours or 8
-    except ValueError:
-        timeout_hours = 8  # Default fallback
-    
-    # Check if enough time has passed
-    time_since_last_message = datetime.utcnow() - conversation.updated_at
-    return time_since_last_message > timedelta(hours=timeout_hours)
 
 
 def store_user_message(db: Session, conversation_id: int, content: str, timestamp: Optional[str] = None, external_id: Optional[str] = None) -> Message:
@@ -678,13 +646,101 @@ def store_tool_response(db: Session, conversation_id: int, tool_call_id: str, re
     return message
 
 
-def get_conversation_history(db: Session, conversation_id: int, im_service=None, channel: str = None, original_message_ts: str = None) -> list:
+def detect_conversation_break_from_messages(messages: list, platform: str, config) -> int:
+    """
+    Detect conversation break indicators in message objects.
+    Returns the index of the first message after the break, or -1 if no break found.
+    """
+    if not messages:
+        return -1
+    
+    # Check for /new command from anyone (both Slack and Teams)
+    for i, message in enumerate(messages):
+        if message.content.strip() == "/new":
+            logger.info(f"Found /new command at message {i}, conversation break detected")
+            return i + 1  # Return index of message after /new
+    
+    # Check for time-based breaks (Teams only)
+    if platform.lower() == "teams":
+        try:
+            teams_config = config.get_im_platform_by_key("teams")
+            timeout_hours = teams_config.conversation_timeout_hours or 8
+        except ValueError:
+            timeout_hours = 8  # Default fallback
+        
+        # Check for time gaps between messages
+        try:
+            for i in range(len(messages) - 1, 0, -1):  # Go backwards through history
+                current_msg = messages[i]
+                prev_msg = messages[i - 1]
+                
+                # Use created_at timestamps directly
+                time_diff = current_msg.created_at - prev_msg.created_at
+                if time_diff > timedelta(hours=timeout_hours):
+                    logger.info(f"Found time gap of {time_diff} at message {i}, conversation break detected")
+                    return i  # Return index of message after the gap
+        except Exception as e:
+            logger.warning(f"Error in time-based break detection: {e}")
+    
+    return -1  # No break found
+
+
+def detect_conversation_break_from_formatted_history(history: list, platform: str, config) -> int:
+    """
+    Detect conversation break indicators in formatted message history.
+    Returns the index of the first message after the break, or -1 if no break found.
+    """
+    if not history:
+        return -1
+    
+    # Check for /new command from anyone (both Slack and Teams)
+    for i, message in enumerate(history):
+        if message.get("role") == "user" and message.get("content", "").strip() == "/new":
+            logger.info(f"Found /new command at message {i}, conversation break detected")
+            return i + 1  # Return index of message after /new
+    
+    # Check for time-based breaks (Teams only)
+    if platform.lower() == "teams":
+        try:
+            teams_config = config.get_im_platform_by_key("teams")
+            timeout_hours = teams_config.conversation_timeout_hours or 8
+        except ValueError:
+            timeout_hours = 8  # Default fallback
+        
+        # Check for time gaps between messages
+        try:
+            for i in range(len(history) - 1, 0, -1):  # Go backwards through history
+                current_msg = history[i]
+                prev_msg = history[i - 1]
+                
+                # Use created_at timestamps directly
+                current_created_at = current_msg.get("created_at")
+                prev_created_at = prev_msg.get("created_at")
+                
+                if current_created_at and prev_created_at:
+                    time_diff = current_created_at - prev_created_at
+                    if time_diff > timedelta(hours=timeout_hours):
+                        logger.info(f"Found time gap of {time_diff} at message {i}, conversation break detected")
+                        return i  # Return index of message after the gap
+        except Exception as e:
+            logger.warning(f"Error in time-based break detection: {e}")
+    
+    return -1  # No break found
+
+
+def get_conversation_history(db: Session, conversation_id: int, im_service=None, channel: str = None, original_message_ts: str = None, platform: str = "teams") -> list:
     """Get conversation history for a specific conversation with context management."""
     config = get_config()
     context_manager = ContextManager(config.llm)
     
     # Use context manager to reconstruct history with summaries
     history = context_manager.reconstruct_history_with_summary(db, conversation_id)
+    
+    # Check for conversation break indicators and trim history if needed
+    break_index = detect_conversation_break_from_formatted_history(history, platform, config)
+    if break_index > 0:
+        logger.info(f"Trimming conversation history at index {break_index}")
+        history = history[break_index:]
     
     
     # Check if we need to summarize the conversation

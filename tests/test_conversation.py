@@ -11,7 +11,6 @@ from limp.models.user import User
 from limp.models.conversation import Conversation, Message
 from limp.api.im import (
     get_or_create_conversation,
-    should_create_new_conversation,
     store_user_message,
     store_assistant_message,
     store_tool_request,
@@ -109,7 +108,8 @@ class TestConversationManagement:
             }
             
             new_conversation = get_or_create_conversation(test_session, user.id, new_message_data, "teams")
-            assert new_conversation.id != conversation.id
+            # With new implementation, same conversation is returned (breaks handled in history trimming)
+            assert new_conversation.id == conversation.id
     
     def test_teams_new_command(self, test_session: Session):
         """Test Teams /new command to force new conversation."""
@@ -143,7 +143,8 @@ class TestConversationManagement:
             }
             
             new_conversation = get_or_create_conversation(test_session, user.id, new_command_data, "teams")
-            assert new_conversation.id != conversation.id
+            # With new implementation, same conversation is returned (breaks handled in history trimming)
+            assert new_conversation.id == conversation.id
     
     def test_teams_channel_no_timeout(self, test_session: Session):
         """Test Teams channel conversations don't use timeout."""
@@ -292,119 +293,6 @@ class TestMessageStorage:
         assert history[2]["content"] == "How are you?"
         assert history[3]["role"] == "assistant"
         assert history[3]["content"] == "I'm doing well, thanks!"
-
-
-class TestConversationTimeout:
-    """Test conversation timeout logic."""
-    
-    def test_should_create_new_conversation_timeout(self, test_session: Session):
-        """Test timeout logic for creating new conversations."""
-        # Create conversation with old timestamp
-        user = User(external_id="U123", platform="teams")
-        test_session.add(user)
-        test_session.commit()
-        test_session.refresh(user)
-        
-        conversation = Conversation(
-            user_id=user.id,
-            context={"conversation_type": "dm"}
-        )
-        # Set old timestamp
-        conversation.updated_at = datetime.utcnow() - timedelta(hours=10)
-        test_session.add(conversation)
-        test_session.commit()
-        
-        # Mock config
-        mock_config = Mock()
-        mock_teams_config = Mock()
-        mock_teams_config.conversation_timeout_hours = 8
-        mock_config.get_im_platform_by_key.return_value = mock_teams_config
-        
-        message_data = {"channel": "19:dm-channel"}
-        
-        # Should create new conversation due to timeout
-        assert should_create_new_conversation(conversation, mock_config, message_data) is True
-    
-    def test_should_not_create_new_conversation_recent(self, test_session: Session):
-        """Test that recent conversations don't timeout."""
-        # Create conversation with recent timestamp
-        user = User(external_id="U123", platform="teams")
-        test_session.add(user)
-        test_session.commit()
-        test_session.refresh(user)
-        
-        conversation = Conversation(
-            user_id=user.id,
-            context={"conversation_type": "dm"}
-        )
-        # Set recent timestamp
-        conversation.updated_at = datetime.utcnow() - timedelta(minutes=30)
-        test_session.add(conversation)
-        test_session.commit()
-        
-        # Mock config
-        mock_config = Mock()
-        mock_teams_config = Mock()
-        mock_teams_config.conversation_timeout_hours = 8
-        mock_config.get_im_platform_by_key.return_value = mock_teams_config
-        
-        message_data = {"channel": "19:dm-channel"}
-        
-        # Should not create new conversation
-        assert should_create_new_conversation(conversation, mock_config, message_data) is False
-    
-    def test_should_not_create_new_conversation_channel(self, test_session: Session):
-        """Test that channel conversations don't timeout."""
-        # Create conversation for channel
-        user = User(external_id="U123", platform="teams")
-        test_session.add(user)
-        test_session.commit()
-        test_session.refresh(user)
-        
-        conversation = Conversation(
-            user_id=user.id,
-            context={"conversation_type": "channel"}
-        )
-        # Set old timestamp
-        conversation.updated_at = datetime.utcnow() - timedelta(hours=10)
-        test_session.add(conversation)
-        test_session.commit()
-        
-        # Mock config
-        mock_config = Mock()
-        mock_teams_config = Mock()
-        mock_teams_config.conversation_timeout_hours = 8
-        mock_config.get_im_platform_by_key.return_value = mock_teams_config
-        
-        message_data = {"channel": "C123"}
-        
-        # Should not create new conversation (channels don't timeout)
-        assert should_create_new_conversation(conversation, mock_config, message_data) is False
-    
-    def test_should_not_create_new_conversation_no_context(self, test_session: Session):
-        """Test that conversations without context don't timeout."""
-        # Create conversation without context
-        user = User(external_id="U123", platform="teams")
-        test_session.add(user)
-        test_session.commit()
-        test_session.refresh(user)
-        
-        conversation = Conversation(user_id=user.id)
-        # Set old timestamp
-        conversation.updated_at = datetime.utcnow() - timedelta(hours=10)
-        test_session.add(conversation)
-        test_session.commit()
-        
-        # Mock config
-        mock_config = Mock()
-        mock_teams_config = Mock()
-        mock_teams_config.conversation_timeout_hours = 8
-        mock_config.get_im_platform_by_key.return_value = mock_teams_config
-        
-        message_data = {"channel": "19:dm-channel"}
-        
-        # Should not create new conversation (no context)
-        assert should_create_new_conversation(conversation, mock_config, message_data) is False
 
 
 class TestConversationIntegration:
