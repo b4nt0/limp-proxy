@@ -77,6 +77,9 @@ class TeamsEchoBot(ActivityHandler):
                 logger.error("No turn context available for sending response")
                 return False
             
+            logger.info(f"TeamsEchoBot sending response: {content}")
+            logger.info(f"TeamsEchoBot metadata: {metadata}")
+            
             # Create activity with content and metadata
             activity = Activity(
                 type=ActivityTypes.message,
@@ -84,8 +87,24 @@ class TeamsEchoBot(ActivityHandler):
                 channel_id="msteams"
             )
             
+            if metadata and metadata.get("blocks"):
+                # Handle Teams-specific content from the blocks
+                blocks = metadata["blocks"]
+                logger.info(f"TeamsEchoBot blocks: {blocks}")
+                
+                # For Teams, we need to combine the main content with the authorization content
+                if blocks and len(blocks) > 0:
+                    # Get the authorization content from the first block
+                    auth_content = blocks[0].get("content", "")
+                    if auth_content:
+                        # Combine the main content with the authorization content
+                        combined_content = f"{content}\n\n{auth_content}"
+                        activity.text = combined_content
+                        logger.info(f"TeamsEchoBot combined content: {combined_content}")
+            
             if metadata and metadata.get("attachments"):
                 activity.attachments = metadata["attachments"]
+                logger.info(f"TeamsEchoBot attachments: {metadata['attachments']}")
             
             # Send using turn context (this is the working pattern)
             await self.current_turn_context.send_activity(activity)
@@ -209,10 +228,12 @@ class TeamsService(IMService):
     async def send_message(self, channel: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
         """Send a message to Teams using the current bot's turn context."""
         try:
-            logger.info(f"Sending Teams message to channel {channel}: {content}")
+            logger.info(f"TeamsService sending message to channel {channel}: {content}")
+            logger.info(f"TeamsService metadata: {metadata}")
             
             # Check if we have a current bot instance with turn context
             if hasattr(self, '_current_bot') and self._current_bot and self._current_bot.current_turn_context:
+                logger.info("TeamsService delegating to bot.send_response")
                 # Use the bot's send_response method (uses turn_context.send_activity)
                 return await self._current_bot.send_response(content, metadata)
             else:
@@ -244,34 +265,17 @@ class TeamsService(IMService):
     
     def create_authorization_button(self, auth_url: str, button_text: str, button_description: str, request=None) -> List[Dict[str, Any]]:
         """Create authorization link blocks for Teams."""
-        # Always use hyperlinks for Teams as well
+        # Use simple text format that works across all Teams clients
+        logger.info(f"Creating Teams authorization button: {button_text} -> {auth_url}")
+        logger.info(f"Button description: {button_description}")
+        
+        content = f"{button_description}\n\n🔐 {button_text}: {auth_url}\n\n💻 Click the link above to open authorization in your browser"
+        logger.info(f"Generated Teams authorization content: {content}")
+        
         return [
             {
-                "contentType": "application/vnd.microsoft.card.adaptive",
-                "content": {
-                    "type": "AdaptiveCard",
-                    "version": "1.3",
-                    "body": [
-                        {
-                            "type": "TextBlock",
-                            "text": f"{button_description}\n\n➡️ **{button_text}**",
-                            "wrap": True
-                        },
-                        {
-                            "type": "TextBlock",
-                            "text": "💻 Click the link above to open authorization in your browser",
-                            "wrap": True,
-                            "size": "Small"
-                        }
-                    ],
-                    "actions": [
-                        {
-                            "type": "Action.OpenUrl",
-                            "title": f"🔐 {button_text}",
-                            "url": auth_url
-                        }
-                    ]
-                }
+                "contentType": "text/plain",
+                "content": content
             }
         ]
     
