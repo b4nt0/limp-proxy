@@ -79,7 +79,8 @@ class TestAuthenticationFlow:
         mock_llm_service.return_value = mock_llm_instance
         
         mock_tools_instance = Mock()
-        mock_tools_instance.get_available_tools.return_value = []
+        mock_tools_instance.get_cleaned_tools_for_openai.return_value = []
+        mock_tools_instance.get_builtin_tools.return_value = []
         mock_tools_service.return_value = mock_tools_instance
         
         # Mock IM service
@@ -163,7 +164,8 @@ class TestAuthenticationFlow:
         mock_llm_service.return_value = mock_llm_instance
         
         mock_tools_instance = Mock()
-        mock_tools_instance.get_available_tools.return_value = []
+        mock_tools_instance.get_cleaned_tools_for_openai.return_value = []
+        mock_tools_instance.get_builtin_tools.return_value = []
         mock_tools_service.return_value = mock_tools_instance
         
         # Mock IM service
@@ -255,7 +257,8 @@ class TestAuthenticationFlow:
         mock_llm_service.return_value = mock_llm_instance
         
         mock_tools_instance = Mock()
-        mock_tools_instance.get_available_tools.return_value = []
+        mock_tools_instance.get_cleaned_tools_for_openai.return_value = []
+        mock_tools_instance.get_builtin_tools.return_value = []
         mock_tools_service.return_value = mock_tools_instance
         
         # Mock IM service

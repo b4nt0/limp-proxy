@@ -49,6 +49,7 @@ class TestIterativeWorkflow:
         
         # Mock tools service methods
         self.tools_service.get_cleaned_tools_for_openai.return_value = []
+        self.tools_service.get_builtin_tools.return_value = []
         self.tools_service.get_system_name_for_tool.return_value = "test-system"
         self.tools_service.execute_tool_call.return_value = {"success": True, "result": "test result"}
         

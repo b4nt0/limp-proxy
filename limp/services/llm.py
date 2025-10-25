@@ -5,6 +5,7 @@ LLM service for OpenAI integration.
 import openai
 from typing import List, Dict, Any, Optional
 import logging
+import json
 
 from ..config import LLMConfig
 
@@ -46,6 +47,9 @@ class LLMService:
                 kwargs["tools"] = tools
                 if tool_choice:
                     kwargs["tool_choice"] = tool_choice
+            
+            # Validate that all kwargs are JSON serializable
+            self._validate_json_serializable(kwargs, "chat_completion kwargs")
             
             if stream:
                 return self._handle_streaming_response(kwargs)
@@ -306,6 +310,9 @@ class LLMService:
                 if tool_choice:
                     kwargs["tool_choice"] = tool_choice
             
+            # Validate that all kwargs are JSON serializable
+            self._validate_json_serializable(kwargs, "stream_chat_completion kwargs")
+            
             collected_content = []
             tool_calls = []
             finish_reason = None
@@ -383,6 +390,15 @@ class LLMService:
             logger.error(f"Streaming chat completion failed: {e}")
             raise
     
+    def _validate_json_serializable(self, data: Any, context: str = "") -> None:
+        """Validate that data is JSON serializable to prevent OpenAI API errors."""
+        try:
+            json.dumps(data)
+        except (TypeError, ValueError) as e:
+            logger.error(f"JSON serialization error in {context}: {e}")
+            logger.error(f"Problematic data: {data}")
+            raise ValueError(f"Data is not JSON serializable for OpenAI API: {e}")
+
     def get_error_message(self, error: Exception) -> str:
         """Get user-friendly error message for LLM errors."""
         if "rate_limit" in str(error).lower():

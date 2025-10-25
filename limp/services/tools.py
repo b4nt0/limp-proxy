@@ -498,6 +498,53 @@ class ToolsService:
         
         return all_tools
     
+    def get_builtin_tools(self) -> List[Dict[str, Any]]:
+        """Get builtin tools for OpenAI API."""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "LimpBuiltinStartOver",
+                    "description": "Start a new conversation. This tool clears the conversation history and begins fresh, as if the user typed '/new'.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                }
+            }
+        ]
+    
+    def execute_builtin_tool(self, tool_name: str, tool_arguments: str) -> Dict[str, Any]:
+        """Execute a builtin tool using reflection."""
+        if tool_name.startswith("LimpBuiltin"):
+            # Extract the class name from the tool name
+            class_name = tool_name.replace("LimpBuiltin", "")
+            
+            # Use reflection to find and instantiate the builtin tool class
+            try:
+                # Import the builtin tools module
+                from . import builtin_tools
+                
+                # Get the class using reflection
+                tool_class = getattr(builtin_tools, f"LimpBuiltin{class_name}")
+                
+                # Instantiate and execute the tool
+                tool_instance = tool_class()
+                return tool_instance.execute(tool_arguments)
+                
+            except (ImportError, AttributeError) as e:
+                logger.error(f"Failed to execute builtin tool {tool_name}: {e}")
+                return {
+                    "success": False,
+                    "error": f"Builtin tool {tool_name} not found or failed to execute"
+                }
+        else:
+            return {
+                "success": False,
+                "error": f"Tool {tool_name} is not a builtin tool"
+            }
+    
     def get_cleaned_tools_for_openai(self, system_configs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Get tools cleaned for OpenAI API (without system field)."""
         tools = self.get_available_tools(system_configs)

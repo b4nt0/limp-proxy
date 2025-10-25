@@ -321,8 +321,7 @@ Summary:"""
             if message.role in ["user", "assistant", "system"]:
                 formatted.append({
                     "role": message.role,
-                    "content": message.content,
-                    "created_at": message.created_at
+                    "content": message.content
                 })
             elif message.role == "tool_request":
                 tool_call_id = message.message_metadata.get("tool_call_id", "")

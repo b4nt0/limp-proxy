@@ -218,9 +218,11 @@ async def process_llm_workflow(
 ) -> Dict[str, Any]:
     """Process message through LLM workflow with iterative tool calling."""
     try:
-        # Get available tools
+        # Get available tools (external + builtin)
         system_configs = [system.model_dump() for system in get_config().external_systems]
-        tools = tools_service.get_cleaned_tools_for_openai(system_configs)
+        external_tools = tools_service.get_cleaned_tools_for_openai(system_configs)
+        builtin_tools = tools_service.get_builtin_tools()
+        tools = external_tools + builtin_tools
         
         # Format messages with system prompts (no tool-specific prompts yet)
         # Note: user_message is already included in conversation_history, so we don't need to pass it separately
@@ -313,25 +315,36 @@ async def process_llm_workflow(
                         tool_call["id"]
                     )
                     
-                    # Check authorization
-                    system_name = tools_service.get_system_name_for_tool(tool_call["function"]["name"], system_configs)
-                    system_config = get_system_config(system_name, system_configs)
-                    auth_token = oauth2_service.get_valid_token(user.id, system_name)
+                    tool_name = tool_call["function"]["name"]
                     
-                    if not auth_token:
-                        # Return authorization URL
-                        auth_url = oauth2_service.generate_auth_url(user.id, system_config, bot_url)
-                        return {
-                            "content": f"Please authorize access to {system_name}: {auth_url}",
-                            "metadata": {"auth_url": auth_url}
+                    # Check if this is a builtin tool
+                    if tool_name.startswith("LimpBuiltin"):
+                        # Execute builtin tool
+                        tool_result = tools_service.execute_builtin_tool(
+                            tool_name,
+                            tool_call["function"]["arguments"]
+                        )
+                        
+                    else:
+                        # Execute external tool (existing logic)
+                        system_name = tools_service.get_system_name_for_tool(tool_name, system_configs)
+                        system_config = get_system_config(system_name, system_configs)
+                        auth_token = oauth2_service.get_valid_token(user.id, system_name)
+                        
+                        if not auth_token:
+                            # Return authorization URL
+                            auth_url = oauth2_service.generate_auth_url(user.id, system_config, bot_url)
+                            return {
+                                "content": f"Please authorize access to {system_name}: {auth_url}",
+                                "metadata": {"auth_url": auth_url}
                         }
-                    
-                    # Execute tool call
-                    tool_result = tools_service.execute_tool_call(
-                        tool_call,
-                        system_config,
-                        auth_token.access_token
-                    )
+                        
+                        # Execute external tool call
+                        tool_result = tools_service.execute_tool_call(
+                            tool_call,
+                            system_config,
+                            auth_token.access_token
+                        )
                     
                     # Store tool response
                     tool_success = tool_result.get("success", True)
@@ -346,7 +359,11 @@ async def process_llm_workflow(
                         else:
                             tool_result_content = f"Tool call failed: {error_msg}. Check if there is another way to achieve the user's goal."
                     else:
-                        tool_result_content = str(tool_result)
+                        # Handle builtin tool results
+                        if tool_name.startswith("LimpBuiltin"):
+                            tool_result_content = tool_result.get("result", str(tool_result))
+                        else:
+                            tool_result_content = str(tool_result)
                     
                     # Store tool response in database
                     store_tool_response(
@@ -362,6 +379,12 @@ async def process_llm_workflow(
                         "content": tool_result_content,
                         "tool_call_id": tool_call["id"]
                     })
+
+                    # Handle special builtin tool actions
+                    if tool_name.startswith("LimpBuiltin") and tool_result.get("action") == "start_over":
+                        # Store /new system message in database
+                        store_system_message(db, conversation_id, "/new")
+
                     
                     # Add debug message for tool response if debug mode is enabled
                     if config.bot.debug:
@@ -425,20 +448,31 @@ async def process_llm_workflow(
     except Exception as e:
         logger.error(f"LLM workflow error: {e}")
         # Clean up any temporary messages on error (unless debug mode is enabled)
-        if 'temporary_message_ids' in locals() and temporary_message_ids and not config.bot.debug:
-            im_service.cleanup_temporary_messages(channel, temporary_message_ids)
+        if 'temporary_message_ids' in locals() and temporary_message_ids:
+            try:
+                if not config.bot.debug:
+                    im_service.cleanup_temporary_messages(channel, temporary_message_ids)
+            except:
+                pass  # Ignore cleanup errors
 
-        if not config.bot.debug:
-            return {
-                    "content": llm_service.get_error_message(e),
+        try:
+            if not config.bot.debug:
+                return {
+                        "content": llm_service.get_error_message(e),
+                        "metadata": {"error": True}
+                    }
+            else:
+                import traceback
+                import sys
+                exc_info_str = ''.join(traceback.format_exception(*sys.exc_info()))
+                return {
+                    "content": exc_info_str,
                     "metadata": {"error": True}
                 }
-        else:
-            import traceback
-            import sys
-            exc_info_str = ''.join(traceback.format_exception(*sys.exc_info()))
+        except:
+            # Fallback error handling
             return {
-                "content": exc_info_str,
+                "content": "An error occurred while processing your request.",
                 "metadata": {"error": True}
             }
 
@@ -646,6 +680,20 @@ def store_tool_response(db: Session, conversation_id: int, tool_call_id: str, re
     return message
 
 
+def store_system_message(db: Session, conversation_id: int, content: str, metadata: Optional[Dict[str, Any]] = None) -> Message:
+    """Store system message in database."""
+    message = Message(
+        conversation_id=conversation_id,
+        role="system",
+        content=content,
+        message_metadata=metadata
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    return message
+
+
 def detect_conversation_break_from_messages(messages: list, platform: str, config) -> int:
     """
     Detect conversation break indicators in message objects.
@@ -695,7 +743,7 @@ def detect_conversation_break_from_formatted_history(history: list, platform: st
     
     # Check for /new command from anyone (both Slack and Teams)
     for i, message in enumerate(history):
-        if message.get("role") == "user" and message.get("content", "").strip() == "/new":
+        if message.get("content", "").strip() == "/new":
             logger.info(f"Found /new command at message {i}, conversation break detected")
             return i + 1  # Return index of message after /new
     
