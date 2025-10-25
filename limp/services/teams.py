@@ -55,12 +55,6 @@ class TeamsLIMPBot(ActivityHandler):
                 )
                 
                 logger.info(f"Teams message processing result: {result}")
-                
-                # If the shared pipeline handled the response, we're done
-                # If not, we could fall back to a simple response or other Teams-specific handling
-                if result.get("status") != "ok":
-                    # Fallback to simple response if shared pipeline fails
-                    await turn_context.send_activity(f"I received your message: {text}")
             else:
                 # For non-message activities, just acknowledge
                 await turn_context.send_activity(f"I received your activity: {text}")
@@ -336,53 +330,14 @@ class TeamsService(IMService):
         return user_id
     
     def acknowledge_message(self, channel: str, message_ts: str) -> bool:
-        """Acknowledge a user's message by sending a brief acknowledgment."""
-        # For Teams, we'll send a simple acknowledgment message
-        # Since Teams doesn't have reactions like Slack, we use a brief message
-        try:
-            ack_content = "✅ Processing your request..."
-            logger.info(f"Sending acknowledgment to Teams channel {channel}")
-            
-            # Use the current bot's turn context if available
-            if hasattr(self, '_current_bot') and self._current_bot and self._current_bot.current_turn_context:
-                # Send the acknowledgment using the bot's send_response method
-                import asyncio
-                asyncio.create_task(self._current_bot.send_response(ack_content))
-                logger.info(f"Sent Teams acknowledgment: {ack_content}")
-                return True
-            else:
-                logger.warning("No current bot turn context available for acknowledgment")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error sending Teams acknowledgment: {e}")
-            return False
+        """Acknowledge a user's message (Teams stub - just logs)."""
+        logger.info(f"Teams acknowledgment requested for channel {channel}, message {message_ts}")
+        return True
     
     def send_temporary_message(self, channel: str, content: str, original_message_ts: str = None) -> Optional[str]:
-        """Send a temporary message and return a placeholder identifier."""
-        try:
-            # Format content with square brackets to indicate it's temporary
-            formatted_content = f"[{content}]"
-            logger.info(f"Sending temporary message to Teams channel {channel}: {formatted_content}")
-            
-            # Use the current bot's turn context if available
-            if hasattr(self, '_current_bot') and self._current_bot and self._current_bot.current_turn_context:
-                logger.info("TeamsService delegating temporary message to bot.send_response")
-                # Use the bot's send_response method (uses turn_context.send_activity)
-                import asyncio
-                asyncio.create_task(self._current_bot.send_response(formatted_content))
-                
-                # Return a placeholder ID - in real implementation, you'd get the actual message ID
-                message_id = f"teams_temp_{channel}_{hash(formatted_content)}"
-                logger.info(f"Sent Teams temporary message with ID: {message_id}")
-                return message_id
-            else:
-                logger.warning("No current bot turn context available for temporary message")
-                return None
-                
-        except Exception as e:
-            logger.error(f"Error sending Teams temporary message: {e}")
-            return None
+        """Send a temporary message (Teams stub - just logs)."""
+        logger.info(f"Teams temporary message requested for channel {channel}: {content}")
+        return f"teams_temp_{channel}_{hash(content)}"
     
     def cleanup_temporary_messages(self, channel: str, message_ids: List[str]) -> bool:
         """Clean up temporary messages (placeholder implementation for Teams)."""
@@ -400,29 +355,10 @@ class TeamsService(IMService):
             return False
     
     def complete_message(self, channel: str, message_ts: str, success: bool) -> bool:
-        """Complete a message by sending a status message to Teams."""
-        try:
-            status_emoji = "✅" if success else "❌"
-            status_text = "completed successfully" if success else "failed"
-            logger.info(f"Teams message {message_ts} {status_text} - sending {status_emoji}")
-            
-            # Send a status message since Teams doesn't support reactions like Slack
-            status_message = f"{status_emoji} Request {status_text}"
-            
-            # Use the current bot's turn context if available
-            if hasattr(self, '_current_bot') and self._current_bot and self._current_bot.current_turn_context:
-                # Send the status message using the bot's send_response method
-                import asyncio
-                asyncio.create_task(self._current_bot.send_response(status_message))
-                logger.info(f"Sent Teams status message: {status_message}")
-                return True
-            else:
-                logger.warning("No current bot turn context available for status message")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error completing Teams message: {e}")
-            return False
+        """Complete a message (Teams stub - just logs)."""
+        status = "completed successfully" if success else "failed"
+        logger.info(f"Teams message completion requested for channel {channel}, message {message_ts}: {status}")
+        return True
     
     def store_conversation_reference(self, activity: Dict[str, Any]) -> None:
         """Store conversation reference for immediate async responses only."""
