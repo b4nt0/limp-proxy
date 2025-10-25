@@ -91,7 +91,8 @@ class TestAuthenticationFlow:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify that normal processing continues (no authorization check)
@@ -176,7 +177,8 @@ class TestAuthenticationFlow:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify that normal processing continues
@@ -269,7 +271,8 @@ class TestAuthenticationFlow:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify that normal processing continues
@@ -317,7 +320,8 @@ class TestAuthenticationFlow:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify authorization flow
@@ -376,7 +380,8 @@ class TestAuthenticationFlow:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify authorization flow
@@ -816,7 +821,8 @@ class TestFinishReasonHandling:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify success
@@ -886,7 +892,8 @@ class TestFinishReasonHandling:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify failure
@@ -956,7 +963,8 @@ class TestFinishReasonHandling:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify failure
@@ -1026,7 +1034,8 @@ class TestFinishReasonHandling:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify success (backward compatibility)

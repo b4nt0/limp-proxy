@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 teams_router = APIRouter()
 
 
-async def process_teams_activity_background(request_data: Dict[str, Any], auth_header: str, db: Session):
+async def process_teams_activity_background(request_data: Dict[str, Any], auth_header: str, db: Session, request: Request):
     """Background task to process Teams activity asynchronously."""
     try:
         logger.info(f"Processing Teams activity in background: {request_data}")
@@ -28,7 +28,7 @@ async def process_teams_activity_background(request_data: Dict[str, Any], auth_h
         teams_service = IMServiceFactory.create_service("teams", teams_config.model_dump())
         
         # Process activity using the full message processing pipeline (same as Slack)
-        success = await teams_service.process_activity(request_data, auth_header, db)
+        success = await teams_service.process_activity(request_data, auth_header, db, request)
         
         if success:
             logger.info("Successfully processed Teams activity in background")
@@ -59,7 +59,7 @@ async def handle_teams_webhook(request: Request, db: Session = Depends(get_sessi
         auth_header = request.headers.get("Authorization", "")
         
         # Queue the activity processing as a background task (matching Slack pattern)
-        asyncio.create_task(process_teams_activity_background(request_data, auth_header, db))
+        asyncio.create_task(process_teams_activity_background(request_data, auth_header, db, request))
         
         # Respond immediately to Teams
         logger.info("Teams webhook queued for background processing, responding immediately")

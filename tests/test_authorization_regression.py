@@ -77,7 +77,8 @@ class TestAuthorizationRegression:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify authorization flow
@@ -159,7 +160,8 @@ class TestAuthorizationRegression:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify authorization flow
@@ -673,7 +675,8 @@ class TestAuthorizationBuiltinTool:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify authorization flow

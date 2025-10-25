@@ -20,10 +20,11 @@ logger = logging.getLogger(__name__)
 class TeamsLIMPBot(ActivityHandler):
     """Teams bot that integrates with the shared message handling pipeline."""
     
-    def __init__(self, teams_service, db_session):
+    def __init__(self, teams_service, db_session, request=None):
         self.teams_service = teams_service
         self.db_session = db_session
         self.current_turn_context = None
+        self.request = request
     
     async def on_message_activity(self, turn_context: TurnContext):
         """Handle incoming messages through the shared pipeline."""
@@ -51,7 +52,8 @@ class TeamsLIMPBot(ActivityHandler):
                     message_data,
                     self.teams_service,
                     self.db_session,
-                    "teams"
+                    "teams",
+                    self.request
                 )
                 
                 logger.info(f"Teams message processing result: {result}")
@@ -158,13 +160,13 @@ class TeamsService(IMService):
         # For now, return True as placeholder
         return True
     
-    async def process_activity(self, activity_data: Dict[str, Any], auth_header: str = "", db=None) -> bool:
+    async def process_activity(self, activity_data: Dict[str, Any], auth_header: str = "", db=None, request=None) -> bool:
         """Process incoming activity using ActivityHandler pattern."""
         try:
             # Deserialize activity from request data
             activity = Activity().deserialize(activity_data)
             
-            bot = TeamsLIMPBot(self, db)
+            bot = TeamsLIMPBot(self, db, request)
 
             # Store the current bot instance so send_message can access it
             self._current_bot = bot

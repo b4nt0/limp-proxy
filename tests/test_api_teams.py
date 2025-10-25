@@ -78,7 +78,7 @@ async def test_teams_echo_functionality():
     }
     
     # Test the echo functionality through process_activity
-    result = await teams_service.process_activity(activity_data, "auth_header", None)
+    result = await teams_service.process_activity(activity_data, "auth_header", None, None)
     
     # Verify the result
     assert result == True
