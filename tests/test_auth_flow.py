@@ -581,11 +581,27 @@ class TestIMServiceAuthorizationButtons:
         assert isinstance(result, list)
         assert len(result) == 1
         
-        # Check text content
+        # Check adaptive card
         card = result[0]
-        assert card["contentType"] == "text/plain"
-        expected_content = f"{button_description}\n\n🔐 {button_text}: {auth_url}\n\n💻 Click the link above to open authorization in your browser"
-        assert card["content"] == expected_content
+        assert card["contentType"] == "application/vnd.microsoft.card.adaptive"
+        assert card["content"]["type"] == "AdaptiveCard"
+        assert card["content"]["version"] == "1.3"
+        
+        # Check body
+        body = card["content"]["body"]
+        assert len(body) == 2
+        assert body[0]["type"] == "TextBlock"
+        assert body[0]["text"] == button_description
+        assert body[1]["type"] == "TextBlock"
+        assert body[1]["text"] == "Click the button below to authorize access:"
+        
+        # Check actions
+        actions = card["content"]["actions"]
+        assert len(actions) == 1
+        assert actions[0]["type"] == "Action.OpenUrl"
+        assert actions[0]["title"] == f"🔐 {button_text}"
+        assert actions[0]["url"] == auth_url
+        assert actions[0]["style"] == "positive"
     
     @patch('requests.post')
     def test_slack_get_user_dm_channel_success(self, mock_post):

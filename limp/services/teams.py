@@ -92,15 +92,22 @@ class TeamsEchoBot(ActivityHandler):
                 blocks = metadata["blocks"]
                 logger.info(f"TeamsEchoBot blocks: {blocks}")
                 
-                # For Teams, we need to combine the main content with the authorization content
+                # Check if we have Adaptive Cards (authorization buttons)
                 if blocks and len(blocks) > 0:
-                    # Get the authorization content from the first block
-                    auth_content = blocks[0].get("content", "")
-                    if auth_content:
-                        # Combine the main content with the authorization content
-                        combined_content = f"{content}\n\n{auth_content}"
-                        activity.text = combined_content
-                        logger.info(f"TeamsEchoBot combined content: {combined_content}")
+                    first_block = blocks[0]
+                    if first_block.get("contentType") == "application/vnd.microsoft.card.adaptive":
+                        # This is an Adaptive Card - send it as an attachment
+                        logger.info("TeamsEchoBot detected Adaptive Card, sending as attachment")
+                        activity.attachments = [first_block]
+                        # Keep the main content as text
+                        logger.info(f"TeamsEchoBot sending Adaptive Card with text: {content}")
+                    else:
+                        # This is plain text content - combine it
+                        auth_content = first_block.get("content", "")
+                        if auth_content:
+                            combined_content = f"{content}\n\n{auth_content}"
+                            activity.text = combined_content
+                            logger.info(f"TeamsEchoBot combined content: {combined_content}")
             
             if metadata and metadata.get("attachments"):
                 activity.attachments = metadata["attachments"]
@@ -264,20 +271,45 @@ class TeamsService(IMService):
         return True
     
     def create_authorization_button(self, auth_url: str, button_text: str, button_description: str, request=None) -> List[Dict[str, Any]]:
-        """Create authorization link blocks for Teams."""
-        # Use simple text format that works across all Teams clients
+        """Create authorization button blocks for Teams using Adaptive Cards."""
         logger.info(f"Creating Teams authorization button: {button_text} -> {auth_url}")
         logger.info(f"Button description: {button_description}")
         
-        content = f"{button_description}\n\n🔐 {button_text}: {auth_url}\n\n💻 Click the link above to open authorization in your browser"
-        logger.info(f"Generated Teams authorization content: {content}")
-        
-        return [
-            {
-                "contentType": "text/plain",
-                "content": content
+        # Create an Adaptive Card with a proper button
+        adaptive_card = {
+            "contentType": "application/vnd.microsoft.card.adaptive",
+            "content": {
+                "type": "AdaptiveCard",
+                "version": "1.3",
+                "body": [
+                    {
+                        "type": "TextBlock",
+                        "text": button_description,
+                        "wrap": True,
+                        "size": "Medium"
+                    },
+                    {
+                        "type": "TextBlock",
+                        "text": "Click the button below to authorize access:",
+                        "wrap": True,
+                        "size": "Small",
+                        "color": "Accent"
+                    }
+                ],
+                "actions": [
+                    {
+                        "type": "Action.OpenUrl",
+                        "title": f"🔐 {button_text}",
+                        "url": auth_url,
+                        "style": "positive"
+                    }
+                ]
             }
-        ]
+        }
+        
+        logger.info(f"Generated Teams Adaptive Card: {adaptive_card}")
+        
+        return [adaptive_card]
     
     def get_user_dm_channel(self, user_id: str) -> str:
         """Get the DM channel ID for a specific user in Teams."""
