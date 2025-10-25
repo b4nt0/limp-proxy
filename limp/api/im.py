@@ -75,35 +75,14 @@ async def handle_user_message(
             if not token or not oauth2_service.validate_token(token, primary_system):
                 auth_url = oauth2_service.generate_auth_url(user.id, primary_system, bot_url)
                 
-                # Send DM with authorization prompt and button
-                authorization_prompt = f"🔐 **Authorization Required**\n\nTo use this bot, you need to authorize access to {primary_system.name}.\n\nClick the button below to authorize:"
-                
-                # Create button metadata for the IM service
-                button_metadata = {
-                    "blocks": im_service.create_authorization_button(
-                        auth_url, 
-                        f"Authorize {primary_system.name}",
-                        f"Click to authorize access to {primary_system.name}",
-                        request
-                    )
-                }
-                
-                # Send DM to user's private channel (not the original channel)
-                user_dm_channel = im_service.get_user_dm_channel(message_data["user_id"])
-                await im_service.send_message(
-                    user_dm_channel,
-                    authorization_prompt,
-                    button_metadata
+                return await handle_authorization_request(
+                    primary_system.name,
+                    auth_url,
+                    message_data["user_id"],
+                    im_service,
+                    message_data,
+                    request
                 )
-                
-                # Complete the message with failure status (authorization required)
-                im_service.complete_message(
-                    message_data["channel"],
-                    message_data.get("timestamp"),
-                    success=False
-                )
-                
-                return {"status": "ok", "action": "authorization_required"}
         
         # Acknowledge the user's message
         im_service.acknowledge_message(message_data["channel"], message_data.get("timestamp"))
@@ -145,6 +124,21 @@ async def handle_user_message(
         
         # Store assistant response
         store_assistant_message(db, conversation.id, response["content"], response.get("metadata"))
+        
+        # Check if authorization is required for a specific system
+        if response.get("metadata", {}).get("authorization_required", False):
+            system_name = response.get("metadata", {}).get("system_name")
+            auth_url = response.get("metadata", {}).get("auth_url")
+            
+            if system_name and auth_url:
+                return await handle_authorization_request(
+                    system_name,
+                    auth_url,
+                    message_data["user_id"],
+                    im_service,
+                    message_data,
+                    request
+                )
         
         # Send response - always use reply_to_message
         # The specific implementation (thread vs new message) is handled by each platform
@@ -332,12 +326,24 @@ async def process_llm_workflow(
                         auth_token = oauth2_service.get_valid_token(user.id, system_name)
                         
                         if not auth_token:
-                            # Return authorization URL
+                            # Store failed tool result for consistency
                             auth_url = oauth2_service.generate_auth_url(user.id, system_config, bot_url)
+                            tool_result_content = f"Authorization required for {system_name}. Please authorize access: {auth_url}"
+                            
+                            # Store tool response in database
+                            store_tool_response(
+                                db,
+                                conversation_id,
+                                tool_call["id"],
+                                tool_result_content,
+                                False  # success=False for authorization required
+                            )
+                            
+                            # Return authorization URL with special metadata
                             return {
                                 "content": f"Please authorize access to {system_name}: {auth_url}",
-                                "metadata": {"auth_url": auth_url}
-                        }
+                                "metadata": {"auth_url": auth_url, "authorization_required": True, "system_name": system_name}
+                            }
                         
                         # Execute external tool call
                         tool_result = tools_service.execute_tool_call(
@@ -829,6 +835,46 @@ def get_system_config(system_name: str, system_configs: list) -> dict:
         if config["name"] == system_name:
             return config
     raise ValueError(f"System {system_name} not found")
+
+
+async def handle_authorization_request(
+    system_name: str,
+    auth_url: str,
+    user_id: str,
+    im_service: Any,
+    message_data: Dict[str, Any],
+    request: Any = None
+) -> Dict[str, Any]:
+    """Handle authorization request by sending DM with authorization prompt and button."""
+    # Send DM with authorization prompt and button
+    authorization_prompt = f"🔐 **Authorization Required**\n\nTo use this bot, you need to authorize access to {system_name}.\n\nClick the button below to authorize:"
+    
+    # Create button metadata for the IM service
+    button_metadata = {
+        "blocks": im_service.create_authorization_button(
+            auth_url, 
+            f"Authorize {system_name}",
+            f"Click to authorize access to {system_name}",
+            request
+        )
+    }
+    
+    # Send DM to user's private channel (not the original channel)
+    user_dm_channel = im_service.get_user_dm_channel(user_id)
+    await im_service.send_message(
+        user_dm_channel,
+        authorization_prompt,
+        button_metadata
+    )
+    
+    # Complete the message with failure status (authorization required)
+    im_service.complete_message(
+        message_data["channel"],
+        message_data.get("timestamp"),
+        success=False
+    )
+    
+    return {"status": "ok", "action": "authorization_required"}
 
 
 def get_bot_url(config, request=None) -> str:
