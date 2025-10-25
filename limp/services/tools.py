@@ -572,8 +572,8 @@ class ToolsService:
             if tool["function"]["name"] == tool_name:
                 return tool["system"]
         
-        # Fallback to first system if not found
-        return system_configs[0]["name"] if system_configs else "default"
+        # Fallback to this system's name if not found
+        return "local system"
     
     def get_tool_description_summary(self, tool_name: str, system_configs: List[Dict[str, Any]]) -> str:
         """Get the summary part (up to first newline) of a tool's description."""
