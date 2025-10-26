@@ -3,12 +3,13 @@ Tests for authentication flow implementation.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 from datetime import datetime, timedelta
 
 from limp.api.im import handle_user_message
 from limp.services.oauth2 import OAuth2Service
-from limp.services.im import SlackService, TeamsService
+from limp.services.slack import SlackService
+from limp.services.teams import TeamsService
 from limp.models.user import User
 from limp.models.auth import AuthToken
 from limp.config import ExternalSystemConfig, OAuth2Config
@@ -78,7 +79,8 @@ class TestAuthenticationFlow:
         mock_llm_service.return_value = mock_llm_instance
         
         mock_tools_instance = Mock()
-        mock_tools_instance.get_available_tools.return_value = []
+        mock_tools_instance.get_cleaned_tools_for_openai.return_value = []
+        mock_tools_instance.get_builtin_tools.return_value = []
         mock_tools_service.return_value = mock_tools_instance
         
         # Mock IM service
@@ -89,7 +91,8 @@ class TestAuthenticationFlow:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify that normal processing continues (no authorization check)
@@ -162,7 +165,8 @@ class TestAuthenticationFlow:
         mock_llm_service.return_value = mock_llm_instance
         
         mock_tools_instance = Mock()
-        mock_tools_instance.get_available_tools.return_value = []
+        mock_tools_instance.get_cleaned_tools_for_openai.return_value = []
+        mock_tools_instance.get_builtin_tools.return_value = []
         mock_tools_service.return_value = mock_tools_instance
         
         # Mock IM service
@@ -173,7 +177,8 @@ class TestAuthenticationFlow:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify that normal processing continues
@@ -254,7 +259,8 @@ class TestAuthenticationFlow:
         mock_llm_service.return_value = mock_llm_instance
         
         mock_tools_instance = Mock()
-        mock_tools_instance.get_available_tools.return_value = []
+        mock_tools_instance.get_cleaned_tools_for_openai.return_value = []
+        mock_tools_instance.get_builtin_tools.return_value = []
         mock_tools_service.return_value = mock_tools_instance
         
         # Mock IM service
@@ -265,7 +271,8 @@ class TestAuthenticationFlow:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify that normal processing continues
@@ -306,14 +313,15 @@ class TestAuthenticationFlow:
         # Mock IM service methods
         self.mock_im_service.get_user_dm_channel.return_value = "D123456"
         self.mock_im_service.create_authorization_button.return_value = [{"type": "button"}]
-        self.mock_im_service.send_message.return_value = True
+        self.mock_im_service.send_message = AsyncMock(return_value=True)
         
         # Call the function
         result = await handle_user_message(
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify authorization flow
@@ -365,14 +373,15 @@ class TestAuthenticationFlow:
         # Mock IM service methods
         self.mock_im_service.get_user_dm_channel.return_value = "D123456"
         self.mock_im_service.create_authorization_button.return_value = [{"type": "button"}]
-        self.mock_im_service.send_message.return_value = True
+        self.mock_im_service.send_message = AsyncMock(return_value=True)
         
         # Call the function
         result = await handle_user_message(
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify authorization flow
@@ -587,21 +596,20 @@ class TestIMServiceAuthorizationButtons:
         assert card["content"]["version"] == "1.3"
         
         # Check body
-        body = card["content"]["body"][0]
-        assert body["type"] == "TextBlock"
-        expected_text = f"{button_description}\n\n➡️ **{button_text}**"
-        assert body["text"] == expected_text
-        
-        # Check context text
-        context_body = card["content"]["body"][1]
-        assert context_body["type"] == "TextBlock"
-        assert context_body["text"] == "💻 Click the link above to open authorization in your browser"
+        body = card["content"]["body"]
+        assert len(body) == 2
+        assert body[0]["type"] == "TextBlock"
+        assert body[0]["text"] == button_description
+        assert body[1]["type"] == "TextBlock"
+        assert body[1]["text"] == "Click the button below to authorize access:"
         
         # Check actions
-        action = card["content"]["actions"][0]
-        assert action["type"] == "Action.OpenUrl"
-        assert action["title"] == f"🔐 {button_text}"
-        assert action["url"] == auth_url
+        actions = card["content"]["actions"]
+        assert len(actions) == 1
+        assert actions[0]["type"] == "Action.OpenUrl"
+        assert actions[0]["title"] == f"🔐 {button_text}"
+        assert actions[0]["url"] == auth_url
+        assert actions[0]["style"] == "positive"
     
     @patch('requests.post')
     def test_slack_get_user_dm_channel_success(self, mock_post):
@@ -813,7 +821,8 @@ class TestFinishReasonHandling:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify success
@@ -883,7 +892,8 @@ class TestFinishReasonHandling:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify failure
@@ -953,7 +963,8 @@ class TestFinishReasonHandling:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify failure
@@ -1023,7 +1034,8 @@ class TestFinishReasonHandling:
             self.message_data,
             self.mock_im_service,
             self.mock_db_session,
-            "slack"
+            "slack",
+            None
         )
         
         # Verify success (backward compatibility)

@@ -75,35 +75,14 @@ async def handle_user_message(
             if not token or not oauth2_service.validate_token(token, primary_system):
                 auth_url = oauth2_service.generate_auth_url(user.id, primary_system, bot_url)
                 
-                # Send DM with authorization prompt and button
-                authorization_prompt = f"🔐 **Authorization Required**\n\nTo use this bot, you need to authorize access to {primary_system.name}.\n\nClick the button below to authorize:"
-                
-                # Create button metadata for the IM service
-                button_metadata = {
-                    "blocks": im_service.create_authorization_button(
-                        auth_url, 
-                        f"Authorize {primary_system.name}",
-                        f"Click to authorize access to {primary_system.name}",
-                        request
-                    )
-                }
-                
-                # Send DM to user's private channel (not the original channel)
-                user_dm_channel = im_service.get_user_dm_channel(message_data["user_id"])
-                im_service.send_message(
-                    user_dm_channel,
-                    authorization_prompt,
-                    button_metadata
+                return await handle_authorization_request(
+                    primary_system.name,
+                    auth_url,
+                    message_data["user_id"],
+                    im_service,
+                    message_data,
+                    request
                 )
-                
-                # Complete the message with failure status (authorization required)
-                im_service.complete_message(
-                    message_data["channel"],
-                    message_data.get("timestamp"),
-                    success=False
-                )
-                
-                return {"status": "ok", "action": "authorization_required"}
         
         # Acknowledge the user's message
         im_service.acknowledge_message(message_data["channel"], message_data.get("timestamp"))
@@ -118,7 +97,8 @@ async def handle_user_message(
             conversation.id, 
             im_service, 
             message_data["channel"], 
-            message_data.get("timestamp")
+            message_data.get("timestamp"),
+            platform
         )
         
         # Create services
@@ -144,6 +124,21 @@ async def handle_user_message(
         
         # Store assistant response
         store_assistant_message(db, conversation.id, response["content"], response.get("metadata"))
+        
+        # Check if authorization is required for a specific system
+        if response.get("metadata", {}).get("authorization_required", False):
+            system_name = response.get("metadata", {}).get("system_name")
+            auth_url = response.get("metadata", {}).get("auth_url")
+            
+            if system_name and auth_url:
+                return await handle_authorization_request(
+                    system_name,
+                    auth_url,
+                    message_data["user_id"],
+                    im_service,
+                    message_data,
+                    request
+                )
         
         # Send response - always use reply_to_message
         # The specific implementation (thread vs new message) is handled by each platform
@@ -217,9 +212,11 @@ async def process_llm_workflow(
 ) -> Dict[str, Any]:
     """Process message through LLM workflow with iterative tool calling."""
     try:
-        # Get available tools
+        # Get available tools (external + builtin)
         system_configs = [system.model_dump() for system in get_config().external_systems]
-        tools = tools_service.get_cleaned_tools_for_openai(system_configs)
+        external_tools = tools_service.get_cleaned_tools_for_openai(system_configs)
+        builtin_tools = tools_service.get_builtin_tools()
+        tools = external_tools + builtin_tools
         
         # Format messages with system prompts (no tool-specific prompts yet)
         # Note: user_message is already included in conversation_history, so we don't need to pass it separately
@@ -312,25 +309,48 @@ async def process_llm_workflow(
                         tool_call["id"]
                     )
                     
-                    # Check authorization
-                    system_name = tools_service.get_system_name_for_tool(tool_call["function"]["name"], system_configs)
-                    system_config = get_system_config(system_name, system_configs)
-                    auth_token = oauth2_service.get_valid_token(user.id, system_name)
+                    tool_name = tool_call["function"]["name"]
                     
-                    if not auth_token:
-                        # Return authorization URL
-                        auth_url = oauth2_service.generate_auth_url(user.id, system_config, bot_url)
-                        return {
-                            "content": f"Please authorize access to {system_name}: {auth_url}",
-                            "metadata": {"auth_url": auth_url}
-                        }
-                    
-                    # Execute tool call
-                    tool_result = tools_service.execute_tool_call(
-                        tool_call,
-                        system_config,
-                        auth_token.access_token
-                    )
+                    # Check if this is a builtin tool
+                    if tool_name.startswith("LimpBuiltin"):
+                        # Execute builtin tool
+                        tool_result = tools_service.execute_builtin_tool(
+                            tool_name,
+                            tool_call["function"]["arguments"]
+                        )
+                        
+                    else:
+                        # Execute external tool (existing logic)
+                        system_name = tools_service.get_system_name_for_tool(tool_name, system_configs)
+                        system_config = get_system_config(system_name, system_configs)
+                        auth_token = oauth2_service.get_valid_token(user.id, system_name)
+                        
+                        if not auth_token:
+                            # Store failed tool result for consistency
+                            auth_url = oauth2_service.generate_auth_url(user.id, system_config, bot_url)
+                            tool_result_content = f"Authorization required for {system_name}. Please authorize access: {auth_url}"
+                            
+                            # Store tool response in database
+                            store_tool_response(
+                                db,
+                                conversation_id,
+                                tool_call["id"],
+                                tool_result_content,
+                                False  # success=False for authorization required
+                            )
+                            
+                            # Return authorization URL with special metadata
+                            return {
+                                "content": f"Please authorize access to {system_name}: {auth_url}",
+                                "metadata": {"auth_url": auth_url, "authorization_required": True, "system_name": system_name}
+                            }
+                        
+                        # Execute external tool call
+                        tool_result = tools_service.execute_tool_call(
+                            tool_call,
+                            system_config,
+                            auth_token.access_token
+                        )
                     
                     # Store tool response
                     tool_success = tool_result.get("success", True)
@@ -345,7 +365,11 @@ async def process_llm_workflow(
                         else:
                             tool_result_content = f"Tool call failed: {error_msg}. Check if there is another way to achieve the user's goal."
                     else:
-                        tool_result_content = str(tool_result)
+                        # Handle builtin tool results
+                        if tool_name.startswith("LimpBuiltin"):
+                            tool_result_content = tool_result.get("result", str(tool_result))
+                        else:
+                            tool_result_content = str(tool_result)
                     
                     # Store tool response in database
                     store_tool_response(
@@ -361,6 +385,53 @@ async def process_llm_workflow(
                         "content": tool_result_content,
                         "tool_call_id": tool_call["id"]
                     })
+
+                    # Handle special builtin tool actions
+                    if tool_name.startswith("LimpBuiltin") and tool_result.get("action") == "start_over":
+                        # Store /new system message in database
+                        store_system_message(db, conversation_id, "/new")
+                    
+                    elif tool_name.startswith("LimpBuiltin") and tool_result.get("action") == "request_authorization":
+                        # Handle authorization request from built-in tool
+                        requested_tool_name = tool_result.get("tool_name")
+                        
+                        # Determine which system to request authorization for
+                        if requested_tool_name:
+                            # Try to find the system for the specific tool
+                            try:
+                                system_name = tools_service.get_system_name_for_tool(requested_tool_name, system_configs)
+                                system_config = get_system_config(system_name, system_configs)
+                            except (ValueError, KeyError):
+                                # Tool not found, fall back to primary system
+                                primary_system = get_config().get_primary_system()
+                                if primary_system:
+                                    system_name = primary_system.name
+                                    system_config = primary_system
+                                else:
+                                    # No primary system available
+                                    continue
+                        else:
+                            # No specific tool requested, use primary system
+                            primary_system = get_config().get_primary_system()
+                            if primary_system:
+                                system_name = primary_system.name
+                                system_config = primary_system
+                            else:
+                                # No primary system available
+                                continue
+                        
+                        # Generate authorization URL
+                        auth_url = oauth2_service.generate_auth_url(user.id, system_config, bot_url)
+                        
+                        # Update the tool result content for proper storage
+                        tool_result_content = f"Authorization required for {system_name}. Please authorize access: {auth_url}"
+                        
+                        # Return authorization URL with special metadata
+                        return {
+                            "content": f"Please authorize access to {system_name}: {auth_url}",
+                            "metadata": {"auth_url": auth_url, "authorization_required": True, "system_name": system_name}
+                        }
+
                     
                     # Add debug message for tool response if debug mode is enabled
                     if config.bot.debug:
@@ -424,20 +495,31 @@ async def process_llm_workflow(
     except Exception as e:
         logger.error(f"LLM workflow error: {e}")
         # Clean up any temporary messages on error (unless debug mode is enabled)
-        if 'temporary_message_ids' in locals() and temporary_message_ids and not config.bot.debug:
-            im_service.cleanup_temporary_messages(channel, temporary_message_ids)
+        if 'temporary_message_ids' in locals() and temporary_message_ids:
+            try:
+                if not config.bot.debug:
+                    im_service.cleanup_temporary_messages(channel, temporary_message_ids)
+            except:
+                pass  # Ignore cleanup errors
 
-        if not config.bot.debug:
-            return {
-                    "content": llm_service.get_error_message(e),
+        try:
+            if not config.bot.debug:
+                return {
+                        "content": llm_service.get_error_message(e),
+                        "metadata": {"error": True}
+                    }
+            else:
+                import traceback
+                import sys
+                exc_info_str = ''.join(traceback.format_exception(*sys.exc_info()))
+                return {
+                    "content": exc_info_str,
                     "metadata": {"error": True}
                 }
-        else:
-            import traceback
-            import sys
-            exc_info_str = ''.join(traceback.format_exception(*sys.exc_info()))
+        except:
+            # Fallback error handling
             return {
-                "content": exc_info_str,
+                "content": "An error occurred while processing your request.",
                 "metadata": {"error": True}
             }
 
@@ -463,26 +545,49 @@ def get_or_create_conversation(db: Session, user_id: int, message_data: Dict[str
     config = get_config()
     
     if platform.lower() == "slack":
-        # For Slack, use thread_ts to determine conversation
+        # For Slack, extract channel and thread identifiers
+        channel_id = message_data.get("channel")
         thread_ts = message_data.get("thread_ts")
+        
+        # If message contains thread identifier, use that (ignore channel for thread messages)
         if thread_ts:
-            # This is a reply in a thread - find existing conversation
-            # Query all conversations for this user and check JSON manually
-            conversations = db.query(Conversation).filter(
-                Conversation.user_id == user_id
-            ).all()
+            existing_conversation = db.query(Conversation).filter(
+                Conversation.user_id == user_id,
+                Conversation.thread_id == thread_ts
+            ).first()
             
-            for conv in conversations:
-                if conv.context and conv.context.get("thread_ts") == thread_ts:
-                    return conv
+            if existing_conversation:
+                return existing_conversation
+        
+        # If no thread identifier, try to find conversation by channel with empty thread_id
+        if channel_id:
+            existing_conversation = db.query(Conversation).filter(
+                Conversation.user_id == user_id,
+                Conversation.channel_id == channel_id,
+                Conversation.thread_id.is_(None)
+            ).first()
+            
+            if existing_conversation:
+                return existing_conversation
+        
+        # If nothing specified, use most recent conversation
+        recent_conversation = db.query(Conversation).filter(
+            Conversation.user_id == user_id
+        ).order_by(Conversation.created_at.desc()).first()
+        
+        if recent_conversation and not thread_ts and not channel_id:
+            return recent_conversation
         
         # Create new conversation for Slack
         context = {
-            "thread_ts": message_data.get("timestamp"),  # Use message timestamp as thread root
-            "channel": message_data.get("channel")
+            "channel": channel_id,
+            "thread_ts": thread_ts or message_data.get("timestamp")  # Use message timestamp as thread root if no thread_ts
         }
+        
         conversation = Conversation(
             user_id=user_id,
+            channel_id=channel_id,
+            thread_id=thread_ts or message_data.get("timestamp"),
             context=context
         )
         db.add(conversation)
@@ -491,23 +596,39 @@ def get_or_create_conversation(db: Session, user_id: int, message_data: Dict[str
         return conversation
     
     elif platform.lower() == "teams":
-        # For Teams, check if we need a new conversation based on timeout
-        # Get the most recent conversation for this user
+        # For Teams, extract channel and conversation identifiers
+        activity = message_data.get("activity", {})
+        channel_id = activity.get("channel_id")
+        conversation_id = activity.get("conversation", {}).get("id")
+        
+        # If message contains thread identifier (conversation_id), use that (ignore channel for thread messages)
+        if conversation_id:
+            existing_conversation = db.query(Conversation).filter(
+                Conversation.user_id == user_id,
+                Conversation.thread_id == conversation_id
+            ).first()
+            
+            if existing_conversation:
+                return existing_conversation
+        
+        # If no thread identifier, try to find conversation by channel with empty thread_id
+        if channel_id:
+            existing_conversation = db.query(Conversation).filter(
+                Conversation.user_id == user_id,
+                Conversation.channel_id == channel_id,
+                Conversation.thread_id.is_(None)
+            ).first()
+            
+            if existing_conversation:
+                return existing_conversation
+        
+        # Get most recent conversation for Teams
         recent_conversation = db.query(Conversation).filter(
             Conversation.user_id == user_id
         ).order_by(Conversation.created_at.desc()).first()
         
-        # Check for /new command
-        text = message_data.get("text", "").strip()
-        if text == "/new":
-            # Force new conversation
-            recent_conversation = None
-        
-        # Check timeout for Teams DMs (not channels)
-        if recent_conversation and should_create_new_conversation(recent_conversation, config, message_data):
-            recent_conversation = None
-        
-        if recent_conversation:
+        if recent_conversation and not conversation_id and not channel_id:
+            # No specific conversation/channel identifiers, use most recent
             return recent_conversation
         
         # Create new conversation for Teams
@@ -515,8 +636,17 @@ def get_or_create_conversation(db: Session, user_id: int, message_data: Dict[str
             "channel": message_data.get("channel"),
             "conversation_type": "dm" if message_data.get("channel", "").startswith("19:") else "channel"
         }
+        
+        # Add conversation identifiers to context for backward compatibility
+        if conversation_id:
+            context["conversation_id"] = conversation_id
+        if channel_id:
+            context["channel_id"] = channel_id
+            
         conversation = Conversation(
             user_id=user_id,
+            channel_id=channel_id,
+            thread_id=conversation_id,
             context=context
         )
         db.add(conversation)
@@ -531,24 +661,6 @@ def get_or_create_conversation(db: Session, user_id: int, message_data: Dict[str
         db.commit()
         db.refresh(conversation)
         return conversation
-
-
-def should_create_new_conversation(conversation: Conversation, config, message_data: Dict[str, Any]) -> bool:
-    """Check if a new conversation should be created based on timeout rules."""
-    # Only apply timeout rules to Teams DMs
-    if not conversation.context or conversation.context.get("conversation_type") != "dm":
-        return False
-    
-    # Get Teams platform config
-    try:
-        teams_config = config.get_im_platform_by_key("teams")
-        timeout_hours = teams_config.conversation_timeout_hours or 8
-    except ValueError:
-        timeout_hours = 8  # Default fallback
-    
-    # Check if enough time has passed
-    time_since_last_message = datetime.utcnow() - conversation.updated_at
-    return time_since_last_message > timedelta(hours=timeout_hours)
 
 
 def store_user_message(db: Session, conversation_id: int, content: str, timestamp: Optional[str] = None, external_id: Optional[str] = None) -> Message:
@@ -615,14 +727,123 @@ def store_tool_response(db: Session, conversation_id: int, tool_call_id: str, re
     return message
 
 
-def get_conversation_history(db: Session, conversation_id: int, im_service=None, channel: str = None, original_message_ts: str = None) -> list:
+def store_system_message(db: Session, conversation_id: int, content: str, metadata: Optional[Dict[str, Any]] = None) -> Message:
+    """Store system message in database."""
+    message = Message(
+        conversation_id=conversation_id,
+        role="system",
+        content=content,
+        message_metadata=metadata
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    return message
+
+
+def detect_conversation_break_from_messages(messages: list, platform: str, config) -> int:
+    """
+    Detect conversation break indicators in message objects.
+    Returns the index of the first message after the break, or -1 if no break found.
+    """
+    if not messages:
+        return -1
+    
+    # Check for /new command from anyone (both Slack and Teams)
+    for i, message in enumerate(messages):
+        if message.content.strip() == "/new":
+            logger.info(f"Found /new command at message {i}, conversation break detected")
+            return i + 1  # Return index of message after /new
+    
+    # Check for time-based breaks (Teams only)
+    if platform.lower() == "teams":
+        try:
+            teams_config = config.get_im_platform_by_key("teams")
+            timeout_hours = teams_config.conversation_timeout_hours or 8
+        except ValueError:
+            timeout_hours = 8  # Default fallback
+        
+        # Check for time gaps between messages
+        try:
+            for i in range(len(messages) - 1, 0, -1):  # Go backwards through history
+                current_msg = messages[i]
+                prev_msg = messages[i - 1]
+                
+                # Use created_at timestamps directly
+                time_diff = current_msg.created_at - prev_msg.created_at
+                if time_diff > timedelta(hours=timeout_hours):
+                    logger.info(f"Found time gap of {time_diff} at message {i}, conversation break detected")
+                    return i  # Return index of message after the gap
+        except Exception as e:
+            logger.warning(f"Error in time-based break detection: {e}")
+    
+    return -1  # No break found
+
+
+def detect_conversation_break_from_formatted_history(history: list, platform: str, config) -> int:
+    """
+    Detect conversation break indicators in formatted message history.
+    Returns the index of the first message after the break, or -1 if no break found.
+    """
+    if not history:
+        return -1
+    
+    # Check for /new command from anyone (both Slack and Teams)
+    for i, message in enumerate(history):
+        if message.get("content", "").strip() == "/new":
+            logger.info(f"Found /new command at message {i}, conversation break detected")
+            return i + 1  # Return index of message after /new
+    
+    # Check for time-based breaks (Teams only)
+    if platform.lower() == "teams":
+        try:
+            teams_config = config.get_im_platform_by_key("teams")
+            timeout_hours = teams_config.conversation_timeout_hours or 8
+        except ValueError:
+            timeout_hours = 8  # Default fallback
+        
+        # Check for time gaps between messages
+        try:
+            for i in range(len(history) - 1, 0, -1):  # Go backwards through history
+                current_msg = history[i]
+                prev_msg = history[i - 1]
+                
+                # Use created_at timestamps directly
+                current_created_at = current_msg.get("created_at")
+                prev_created_at = prev_msg.get("created_at")
+                
+                if current_created_at and prev_created_at:
+                    time_diff = current_created_at - prev_created_at
+                    if time_diff > timedelta(hours=timeout_hours):
+                        logger.info(f"Found time gap of {time_diff} at message {i}, conversation break detected")
+                        return i  # Return index of message after the gap
+        except Exception as e:
+            logger.warning(f"Error in time-based break detection: {e}")
+    
+    return -1  # No break found
+
+
+def get_conversation_history(db: Session, conversation_id: int, im_service=None, channel: str = None, original_message_ts: str = None, platform: str = "teams") -> list:
     """Get conversation history for a specific conversation with context management."""
     config = get_config()
     context_manager = ContextManager(config.llm)
     
-    # Use context manager to reconstruct history with summaries
-    history = context_manager.reconstruct_history_with_summary(db, conversation_id)
+    # Get raw messages for break detection
+    raw_messages = db.query(Message).filter(
+        Message.conversation_id == conversation_id
+    ).order_by(Message.created_at.asc()).all()
     
+    # Check for conversation break indicators using raw messages
+    break_index = detect_conversation_break_from_messages(raw_messages, platform, config)
+    if break_index > 0:
+        logger.info(f"Trimming conversation history at index {break_index}")
+        # Trim raw messages before formatting
+        raw_messages = raw_messages[break_index:]
+        # Use context manager to reconstruct history with summaries (now with trimmed messages)
+        history = context_manager.reconstruct_history_with_summary_from_messages(raw_messages)
+    else:
+        # No break detected, use the original method for backward compatibility
+        history = context_manager.reconstruct_history_with_summary(db, conversation_id)
     
     # Check if we need to summarize the conversation
     if context_manager.should_summarize(history):
@@ -655,6 +876,46 @@ def get_system_config(system_name: str, system_configs: list) -> dict:
         if config["name"] == system_name:
             return config
     raise ValueError(f"System {system_name} not found")
+
+
+async def handle_authorization_request(
+    system_name: str,
+    auth_url: str,
+    user_id: str,
+    im_service: Any,
+    message_data: Dict[str, Any],
+    request: Any = None
+) -> Dict[str, Any]:
+    """Handle authorization request by sending DM with authorization prompt and button."""
+    # Send DM with authorization prompt and button
+    authorization_prompt = f"🔐 **Authorization Required**\n\nTo use this bot, you need to authorize access to {system_name}.\n\nClick the button below to authorize:"
+    
+    # Create button metadata for the IM service
+    button_metadata = {
+        "blocks": im_service.create_authorization_button(
+            auth_url, 
+            f"Authorize {system_name}",
+            f"Click to authorize access to {system_name}",
+            request
+        )
+    }
+    
+    # Send DM to user's private channel (not the original channel)
+    user_dm_channel = im_service.get_user_dm_channel(user_id)
+    await im_service.send_message(
+        user_dm_channel,
+        authorization_prompt,
+        button_metadata
+    )
+    
+    # Complete the message with failure status (authorization required)
+    im_service.complete_message(
+        message_data["channel"],
+        message_data.get("timestamp"),
+        success=False
+    )
+    
+    return {"status": "ok", "action": "authorization_required"}
 
 
 def get_bot_url(config, request=None) -> str:

@@ -498,6 +498,70 @@ class ToolsService:
         
         return all_tools
     
+    def get_builtin_tools(self) -> List[Dict[str, Any]]:
+        """Get builtin tools for OpenAI API."""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "LimpBuiltinStartOver",
+                    "description": "Start a new conversation. This tool clears the conversation history and begins fresh, as if the user typed '/new'.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "LimpBuiltinRequestAuthorization",
+                    "description": "Request authorization for external systems. Use this when you need access to external tools but the user hasn't authorized them yet. You can specify a particular tool name if you know which one you need.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "tool_name": {
+                                "type": "string",
+                                "description": "Optional name of the specific external tool that requires authorization. If the AI has recently failed to access a certain external tool, use its name. If not provided, will request authorization for the primary system."
+                            }
+                        },
+                        "required": []
+                    }
+                }
+            }
+        ]
+    
+    def execute_builtin_tool(self, tool_name: str, tool_arguments: str) -> Dict[str, Any]:
+        """Execute a builtin tool using reflection."""
+        if tool_name.startswith("LimpBuiltin"):
+            # Extract the class name from the tool name
+            class_name = tool_name.replace("LimpBuiltin", "")
+            
+            # Use reflection to find and instantiate the builtin tool class
+            try:
+                # Import the builtin tools module
+                from . import builtin_tools
+                
+                # Get the class using reflection
+                tool_class = getattr(builtin_tools, f"LimpBuiltin{class_name}")
+                
+                # Instantiate and execute the tool
+                tool_instance = tool_class()
+                return tool_instance.execute(tool_arguments)
+                
+            except (ImportError, AttributeError) as e:
+                logger.error(f"Failed to execute builtin tool {tool_name}: {e}")
+                return {
+                    "success": False,
+                    "error": f"Builtin tool {tool_name} not found or failed to execute"
+                }
+        else:
+            return {
+                "success": False,
+                "error": f"Tool {tool_name} is not a builtin tool"
+            }
+    
     def get_cleaned_tools_for_openai(self, system_configs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Get tools cleaned for OpenAI API (without system field)."""
         tools = self.get_available_tools(system_configs)
@@ -525,8 +589,8 @@ class ToolsService:
             if tool["function"]["name"] == tool_name:
                 return tool["system"]
         
-        # Fallback to first system if not found
-        return system_configs[0]["name"] if system_configs else "default"
+        # Fallback to this system's name if not found
+        return "local system"
     
     def get_tool_description_summary(self, tool_name: str, system_configs: List[Dict[str, Any]]) -> str:
         """Get the summary part (up to first newline) of a tool's description."""

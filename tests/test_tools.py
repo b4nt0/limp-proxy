@@ -488,7 +488,7 @@ def test_get_system_name_for_tool():
         
         # Test tool not found (fallback to first system)
         system_name = service.get_system_name_for_tool("nonExistentTool", system_configs)
-        assert system_name == "system1"
+        assert system_name == "local system"
 
 
 def test_convert_parameters_with_arrays():

@@ -4,7 +4,9 @@ Tests for IM service functionality.
 
 import pytest
 from unittest.mock import Mock, patch
-from limp.services.im import SlackService, TeamsService, IMServiceFactory
+from limp.services.im import IMServiceFactory
+from limp.services.slack import SlackService
+from limp.services.teams import TeamsService
 
 
 class TestSlackService:
@@ -549,12 +551,13 @@ class TestTeamsService:
         assert "attachments" in result
         assert result["attachments"] == metadata["attachments"]
     
-    def test_send_message(self):
-        """Test sending Teams message (placeholder implementation)."""
-        result = self.teams_service.send_message("C123456", "Hello, world!")
+    @pytest.mark.asyncio
+    async def test_send_message(self):
+        """Test sending Teams message without bot context (returns False)."""
+        result = await self.teams_service.send_message("C123456", "Hello, world!")
         
-        # Current implementation returns True as placeholder
-        assert result is True
+        # Teams send_message returns False when no bot turn context is available
+        assert result is False
     
     @patch('limp.config.get_config')
     @patch('limp.api.im.get_bot_url')
@@ -586,13 +589,12 @@ class TestTeamsService:
         # Check body
         body = card["content"]["body"][0]
         assert body["type"] == "TextBlock"
-        expected_text = f"{button_description}\n\n➡️ **{button_text}**"
-        assert body["text"] == expected_text
+        assert body["text"] == button_description
         
         # Check context text
         context_body = card["content"]["body"][1]
         assert context_body["type"] == "TextBlock"
-        assert context_body["text"] == "💻 Click the link above to open authorization in your browser"
+        assert context_body["text"] == "Click the button below to authorize access:"
         
         # Check actions
         action = card["content"]["actions"][0]
